@@ -37,7 +37,7 @@ way:
 ### Quick install with the script
 
 ```sh
-git clone https://github.com/tbt9czsdd4-droid/swarm2linux.git
+git clone https://github.com/curxxed-mc/swarm2linux.git
 cd swarm2linux
 ./install.sh
 ```
@@ -92,7 +92,7 @@ sudo dnf install git gcc pkgconf-pkg-config fontconfig-devel rust cargo
 Source and build:
 
 ```sh
-git clone https://github.com/tbt9czsdd4-droid/swarm2linux.git
+git clone https://github.com/curxxed-mc/swarm2linux.git
 cd swarm2linux
 cargo build --release --locked
 ```
@@ -142,7 +142,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 Source and build:
 
 ```sh
-git clone https://github.com/tbt9czsdd4-droid/swarm2linux.git
+git clone https://github.com/curxxed-mc/swarm2linux.git
 cd swarm2linux
 cargo build --release --locked
 ```
@@ -182,7 +182,7 @@ sudo pacman -S --needed git base-devel fontconfig rust
 Source and build:
 
 ```sh
-git clone https://github.com/tbt9czsdd4-droid/swarm2linux.git
+git clone https://github.com/curxxed-mc/swarm2linux.git
 cd swarm2linux
 cargo build --release --locked
 ```
@@ -230,7 +230,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 Source and build:
 
 ```sh
-git clone https://github.com/tbt9czsdd4-droid/swarm2linux.git
+git clone https://github.com/curxxed-mc/swarm2linux.git
 cd swarm2linux
 cargo build --release --locked
 ```
