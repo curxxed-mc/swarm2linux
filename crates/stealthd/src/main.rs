@@ -368,6 +368,12 @@ impl Headset {
         }
     }
 
+    /// This stealthd's version.
+    #[zbus(property)]
+    async fn version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+
     /// Whether a headset is connected.
     #[zbus(property)]
     async fn connected(&self) -> bool {

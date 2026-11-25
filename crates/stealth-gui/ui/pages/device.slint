@@ -2,7 +2,7 @@
 
 import { AboutSlint, LineEdit } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
-import { Headset, Prefs, About, ThemeChoice } from "../state.slint";
+import { Headset, Prefs, About, ThemeChoice, Diagnostics, DiagnosticRow } from "../state.slint";
 import { Card, Label, Hint, Toggle, GradientSlider, Dropdown, InfoRow, OutlineButton, SavedItem } from "../widgets/controls.slint";
 
 // A setting name with its control on the right.
@@ -345,6 +345,90 @@ component NotificationsCard inherits Card {
     }
 }
 
+// The self-diagnostic: what the app needs, checked, with how to fix what is wrong.
+component DiagnosticsCard inherits Card {
+    private property <bool> copied;
+
+    title: "Diagnostics";
+
+    Hint {
+        text: Diagnostics.rows.length == 0
+            ? "Checks the device, permissions, stealthd, the headset, the volume and the app's files, and says how to fix what is wrong."
+            : Diagnostics.summary;
+    }
+    HorizontalLayout {
+        spacing: 12px;
+        alignment: end;
+        if Diagnostics.rows.length > 0: OutlineButton {
+            text: root.copied ? "Copied" : "Copy report";
+            clicked => {
+                copier.select-all();
+                copier.copy();
+                copier.clear-selection();
+                root.copied = true;
+            }
+        }
+        OutlineButton {
+            text: Diagnostics.running ? "Checking…" : (Diagnostics.rows.length == 0 ? "Run checks" : "Check again");
+            primary: Diagnostics.rows.length == 0;
+            enabled: !Diagnostics.running;
+            clicked => {
+                root.copied = false;
+                Diagnostics.run();
+            }
+        }
+    }
+
+    if Diagnostics.rows.length > 0: VerticalLayout {
+        spacing: 6px;
+        for row in Diagnostics.rows: VerticalLayout {
+            spacing: 4px;
+            if row.first: Text {
+                text: row.group.to-uppercase();
+                color: Theme.muted;
+                font-size: Theme.small-size;
+                letter-spacing: 1px;
+            }
+            // the text in a column of its own, with the dot beside its first line: wrapped text keeps its height
+            Rectangle {
+                VerticalLayout {
+                    padding-left: 18px;
+                    spacing: 2px;
+                    Text {
+                        text: row.title;
+                        color: row.level == 0 ? Theme.muted : Theme.text;
+                        font-size: Theme.label-size;
+                        wrap: word-wrap;
+                    }
+                    if row.hint != "": Text {
+                        text: row.hint;
+                        color: Theme.muted;
+                        font-size: Theme.small-size;
+                        wrap: word-wrap;
+                    }
+                }
+                Rectangle {
+                    x: 0;
+                    y: 6px;
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: row.level == 3 ? Theme.bad : (row.level == 2 ? Theme.warn : (row.level == 1 ? Theme.good : Theme.dim));
+                }
+            }
+        }
+    }
+
+    // holds the report for Copy report; never shown
+    copier := TextInput {
+        text: Diagnostics.report;
+        read-only: true;
+        width: 0;
+        height: 0;
+        opacity: 0;
+    }
+}
+
 // One theme of the picker, in its own colours.
 component ThemeCard {
     in property <ThemeChoice> choice;
@@ -467,25 +551,35 @@ component AboutCard inherits Card {
     }
 }
 
-export component DevicePage inherits HorizontalLayout {
+export component DevicePage inherits VerticalLayout {
     spacing: 24px;
-    alignment: stretch;
 
-    VerticalLayout {
-        horizontal-stretch: 1;
+    HorizontalLayout {
         spacing: 24px;
-        alignment: start;
-        StatusCard { }
-        ProfilesCard { }
-        PowerCard { }
+        alignment: stretch;
+
+        VerticalLayout {
+            // the columns share the width equally, whatever their cards hold
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            spacing: 24px;
+            alignment: start;
+            StatusCard { }
+            ProfilesCard { }
+            PowerCard { }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            spacing: 24px;
+            alignment: start;
+            HubCard { }
+            NotificationsCard { }
+            AppearanceCard { }
+            AboutCard { }
+        }
     }
-    VerticalLayout {
-        horizontal-stretch: 1;
-        spacing: 24px;
-        alignment: start;
-        HubCard { }
-        NotificationsCard { }
-        AppearanceCard { }
-        AboutCard { }
-    }
+
+    // full width: its lines are long
+    DiagnosticsCard { }
 }

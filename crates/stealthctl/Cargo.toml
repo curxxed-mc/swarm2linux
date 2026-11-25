@@ -14,4 +14,5 @@ race-hid.workspace = true
 serde_json.workspace = true
 sink-volume.workspace = true
 stealth-dbus.workspace = true
+stealth-doctor.workspace = true
 tb-proto.workspace = true

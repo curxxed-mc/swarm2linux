@@ -19,6 +19,7 @@ slint = { version = "1.18", default-features = false, features = [
     "system-tray",
 ] }
 stealth-dbus.workspace = true
+stealth-doctor.workspace = true
 tb-proto.workspace = true
 toml = "1"
 zbus.workspace = true

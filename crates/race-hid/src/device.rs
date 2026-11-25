@@ -9,6 +9,9 @@ use crate::{MAX_STREAM, REPORT_IN, REPORT_OUT, REPORT_SIZE, VID};
 const FORBIDDEN_CMDS: [(u16, u16); 2] = [(0x0400, 0x04FF), (0x1C00, 0x1CFF)];
 
 /// Product IDs seen speaking this protocol.
+/// The product IDs of [`known_product`].
+pub const KNOWN_PIDS: [u16; 5] = [0x2287, 0x2288, 0x2289, 0x229B, 0x229E];
+
 pub fn known_product(pid: u16) -> Option<&'static str> {
     match pid {
         0x2287 => Some("Stealth Pro II PC transmitter"),

@@ -331,6 +331,12 @@ the volume but can't change it. They come in these packages:
 
 ### Troubleshooting
 
+Start with the self-diagnostic: `stealthctl doctor` in a terminal, or **Run checks** in the Diagnostics card at the
+bottom of the desktop app's Device page. It checks the device, the udev rule and permissions, the `stealthd`
+service (including one left running an old version after an update), the headset, PipeWire and the app's files, and
+says how to fix each problem. Its report names no addresses or serial numbers and writes your home folder as `~`, so
+you can paste it into a bug report (**Copy report** in the app).
+
 - **The app says "stealthd is not running".** Check the service with `systemctl --user status stealthd`; its log
   is `journalctl --user -u stealthd`.
 - **The headset is not found.** `stealthctl devices` lists what is plugged in. After installing the udev rule,
@@ -472,6 +478,7 @@ need direct access and ask you to stop the service first.
 ## stealthctl
 
 ```sh
+stealthctl doctor                 # check the setup and say how to fix problems (works without stealthd)
 stealthctl status                 # battery, transmitters, volume, both EQs, Superhuman Hearing, ANC, mic
 stealthctl volume 40              # the headset's volume in the system's sound settings, 0-100
 stealthctl eq list                # game EQ: bands with frequencies, built-in and custom presets

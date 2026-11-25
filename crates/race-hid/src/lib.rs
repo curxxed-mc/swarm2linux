@@ -13,7 +13,7 @@
 mod device;
 mod race;
 
-pub use device::{DeviceInfo, HidrawDevice, ReportIo, discover, known_product};
+pub use device::{DeviceInfo, HidrawDevice, KNOWN_PIDS, ReportIo, discover, known_product};
 pub use race::{RacePacket, RaceType, Reassembler};
 
 /// Turtle Beach's USB vendor ID.

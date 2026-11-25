@@ -31,6 +31,13 @@ struct Cli {
 enum Cmd {
     /// List Turtle Beach hidraw devices
     Devices,
+    /// Check the setup (device, permissions, stealthd, headset, volume, files) and say how to fix problems; the
+    /// output can go into a bug report
+    Doctor {
+        /// Only look, don't open the device when stealthd is not running
+        #[arg(long)]
+        no_device: bool,
+    },
     /// Show battery, connection and settings
     Status,
     /// Set the headset's volume in percent (0-100): its volume in the system's sound settings
@@ -342,6 +349,12 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Devices => return devices(),
+        // must work when nothing else does: before connecting to anything
+        Cmd::Doctor { no_device } => {
+            let report = stealth_doctor::run(stealth_doctor::Options { read_device: !no_device });
+            print!("{}", report.text("stealthctl"));
+            std::process::exit(if report.worst() == stealth_doctor::Level::Fail { 1 } else { 0 });
+        }
         // PipeWire's business, not the headset's: needs neither stealthd nor the device
         Cmd::Volume { percent } => return set_volume(cli.device.as_deref(), i64::from(percent)),
         _ => {}
@@ -350,7 +363,7 @@ fn main() -> Result<()> {
     let b = &mut backend;
 
     match cli.cmd {
-        Cmd::Devices | Cmd::Volume { .. } => unreachable!(),
+        Cmd::Devices | Cmd::Doctor { .. } | Cmd::Volume { .. } => unreachable!(),
         Cmd::Status => status(b, cli.device.as_deref()),
         Cmd::Watch { seconds } => watch(b, seconds.map(Duration::from_secs)),
         Cmd::Eq { cmd } => equalizer(b, &keys::GAME_EQ, cmd),

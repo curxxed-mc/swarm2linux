@@ -4948,6 +4948,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "stealth-doctor"
+version = "1.3.1"
+dependencies = [
+ "race-hid",
+ "sink-volume",
+ "stealth-dbus",
+ "tb-proto",
+ "toml",
+]
+
+[[package]]
 name = "stealth-gui"
 version = "1.3.1"
 dependencies = [
@@ -4957,6 +4968,7 @@ dependencies = [
  "slint",
  "slint-build",
  "stealth-dbus",
+ "stealth-doctor",
  "tb-proto",
  "toml",
  "zbus",
@@ -4983,6 +4995,7 @@ dependencies = [
  "serde_json",
  "sink-volume",
  "stealth-dbus",
+ "stealth-doctor",
  "tb-proto",
 ]
 

@@ -12,6 +12,7 @@
 //! - signal `Changed(a{sv})`: the values that changed
 //! - property `Connected` (b)
 //! - property `BatteryNotifications` (b, writable): whether stealthd warns about a low battery
+//! - property `Version` (s): stealthd's version
 //!
 //! Besides the names of `tb_proto::values::NAMES`, `Values` and `Changed` carry [`DAEMON_NAMES`].
 //!
@@ -160,6 +161,17 @@ impl DaemonClient {
 
     pub fn delete_profile(&self, name: &str) -> zbus::Result<()> {
         self.proxy.call::<_, _, ()>("DeleteProfile", &(name,))
+    }
+
+    /// stealthd's version; an error from a stealthd older than this property.
+    pub fn version(&self) -> zbus::Result<String> {
+        self.proxy.get_property("Version")
+    }
+
+    /// The process id of the running stealthd.
+    pub fn pid(&self) -> zbus::Result<u32> {
+        let dbus = zbus::blocking::fdo::DBusProxy::new(self.proxy.connection())?;
+        Ok(dbus.get_connection_unix_process_id(BUS_NAME.try_into()?)?)
     }
 
     /// Whether stealthd warns about a low battery.

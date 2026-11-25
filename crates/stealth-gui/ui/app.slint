@@ -1,13 +1,13 @@
 import { ScrollView, Palette } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { Headset, Choice, Prefs, About, ThemeChoice } from "state.slint";
+import { Headset, Choice, Prefs, About, ThemeChoice, Diagnostics, DiagnosticRow } from "state.slint";
 import { Rail, Header, Banner, Overlay, Toast, Page } from "shell.slint";
 import { SettingsPage } from "pages/settings.slint";
 import { EqualizerPage } from "pages/equalizer.slint";
 import { ControlsPage } from "pages/controls.slint";
 import { DevicePage } from "pages/device.slint";
 
-export { Headset, Choice, Prefs, About, ThemeChoice, Theme }
+export { Headset, Choice, Prefs, About, ThemeChoice, Theme, Diagnostics, DiagnosticRow }
 
 // The tray icon and its menu. It has its own copy of the globals; Rust fills both. Tray menus show no check
 // marks (Slint 1.18), so the labels say what is on.

@@ -106,6 +106,7 @@ impl Window {
         connect_writes(&ui.global::<Headset>(), &self.bridge);
         connect_equalizer(&ui, &self.bridge);
         connect_profiles(&ui);
+        connect_diagnostics(&ui);
         connect_prefs(&ui, self.tray.clone());
         theme::apply(&ui);
         theme::watch_system(ui.as_weak());
@@ -211,6 +212,49 @@ fn connect_equalizer(ui: &AppWindow, bridge: &Link) {
             b.send(command);
         }
         model::show_equalizer(&h, &eq, edit.preset, &edit.bands);
+    });
+}
+
+/// The Diagnostics card: run the checks off the UI thread and show them.
+fn connect_diagnostics(ui: &AppWindow) {
+    let weak = ui.as_weak();
+    ui.global::<Diagnostics>().on_run(move || {
+        let Some(ui) = weak.upgrade() else { return };
+        ui.global::<Diagnostics>().set_running(true);
+        let weak = weak.clone();
+        std::thread::spawn(move || {
+            let report = stealth_doctor::run(stealth_doctor::Options { read_device: true });
+            let _ = slint::invoke_from_event_loop(move || {
+                let Some(ui) = weak.upgrade() else { return };
+                let d = ui.global::<Diagnostics>();
+                let mut group = "";
+                let rows: Vec<DiagnosticRow> = report
+                    .checks
+                    .iter()
+                    .map(|c| {
+                        let first = c.group != group;
+                        group = c.group;
+                        DiagnosticRow {
+                            level: match c.level {
+                                stealth_doctor::Level::Info => 0,
+                                stealth_doctor::Level::Ok => 1,
+                                stealth_doctor::Level::Warn => 2,
+                                stealth_doctor::Level::Fail => 3,
+                            },
+                            group: c.group.into(),
+                            first,
+                            title: c.title.as_str().into(),
+                            hint: c.hint.clone().unwrap_or_default().into(),
+                        }
+                    })
+                    .collect();
+                let text = report.text("stealth-gui");
+                d.set_summary(text.trim_end().lines().last().unwrap_or_default().into());
+                d.set_report(text.into());
+                d.set_rows(slint::ModelRc::new(slint::VecModel::from(rows)));
+                d.set_running(false);
+            });
+        });
     });
 }
 

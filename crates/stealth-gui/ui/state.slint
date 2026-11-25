@@ -107,6 +107,26 @@ export global About {
     in property <string> version;
 }
 
+// One line of the self-diagnostic. level: 0 info, 1 fine, 2 warning, 3 problem.
+export struct DiagnosticRow {
+    level: int,
+    group: string,
+    // whether this is the first line of its group (the group's heading goes above it)
+    first: bool,
+    title: string,
+    hint: string,
+}
+
+// The self-diagnostic (stealth-doctor), run from the Device page.
+export global Diagnostics {
+    in property <bool> running;
+    in property <[DiagnosticRow]> rows;
+    // the plain-text report, for Copy report
+    in property <string> report;
+    in property <string> summary;
+    callback run();
+}
+
 // A card of the theme picker, drawn in the theme's own colours.
 export struct ThemeChoice {
     name: string,
