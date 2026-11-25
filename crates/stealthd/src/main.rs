@@ -14,6 +14,7 @@
 //! profile, or "": the one last applied or saved, kept across restarts) and `profile_modified` (whether the headset's
 //! settings differ from the selected profile).
 
+mod osd;
 mod profiles;
 
 use std::collections::{BTreeMap, HashMap};
@@ -140,11 +141,13 @@ struct Settings {
     battery_notifications: bool,
     /// The selected profile, or "".
     profile: String,
+    /// Show the level on screen when the wheel on the headset turns mic monitoring or the noise gate.
+    level_popups: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { battery_notifications: true, profile: String::new() }
+        Self { battery_notifications: true, profile: String::new(), level_popups: true }
     }
 }
 
@@ -419,7 +422,8 @@ fn main() -> Result<()> {
         .build()?;
     eprintln!("stealthd: serving {INTERFACE} at {PATH} as {BUS_NAME}");
 
-    let mut daemon = Daemon { conn, shared, queue, notified_low: None, card: None, sink: None, sink_problem: None };
+    let osd = osd::Osd::start(conn.clone());
+    let mut daemon = Daemon { conn, shared, queue, notified_low: None, card: None, sink: None, sink_problem: None, osd };
     loop {
         match pick_device() {
             Some((path, label)) => {
@@ -460,6 +464,7 @@ struct Daemon {
     sink: Option<Sink>,
     /// The last error reading the sink, so it is logged once.
     sink_problem: Option<String>,
+    osd: osd::Osd,
 }
 
 impl Daemon {
@@ -512,10 +517,17 @@ impl Daemon {
             let link = client.headset_link();
             let docs = client.poll()?;
             if !docs.is_empty() || client.headset_link() != link {
+                // pushes that arrive here were not asked for by a write: the headset's own controls
+                let levels = osd::levels(&state);
                 for doc in &docs {
                     state.apply(doc);
                 }
                 self.publish(Some(label.to_string()), &state, client.headset_link());
+                if self.shared.lock().unwrap().settings.level_popups {
+                    for popup in osd::changes(&levels, &state) {
+                        self.osd.show(popup);
+                    }
+                }
             }
             if Instant::now() >= next_sink_refresh {
                 next_sink_refresh = Instant::now() + SINK_REFRESH;

@@ -16,3 +16,6 @@ stealth-dbus.workspace = true
 tb-proto.workspace = true
 toml = "1"
 zbus.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -5007,6 +5007,7 @@ dependencies = [
  "async-channel",
  "race-hid",
  "serde",
+ "serde_json",
  "sink-volume",
  "stealth-dbus",
  "tb-proto",

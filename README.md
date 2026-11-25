@@ -452,7 +452,10 @@ superhuman = false
 `stealthd` owns the headset: it finds it (preferring the transmitter over the headset's own cable), keeps a session
 with every record subscribed, follows unplugging, and serves everything on the session bus. It also shows a
 notification when the battery drops to 15 % and 5 % (the `BatteryNotifications` property turns that off; it is
-kept in `~/.config/swarm2linux/stealthd.toml`). `install.sh` runs it as the systemd user service `stealthd`.
+kept in `~/.config/swarm2linux/stealthd.toml`). When the assignable wheel on the headset turns mic monitoring or
+the noise gate level, it shows the new percentage on screen like the volume (KDE Plasma's volume pop-up, a
+notification elsewhere); `level_popups = false` in `stealthd.toml` turns that off. `install.sh` runs it as the
+systemd user service `stealthd`.
 
 After a restart the headset can keep AI noise reduction working while it reports it off. Whenever `stealthd`
 connects to the headset and finds it reported off, it switches it on and off once, which ends that.
