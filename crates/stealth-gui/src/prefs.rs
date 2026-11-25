@@ -14,11 +14,13 @@ pub struct Preferences {
     pub show_grid: bool,
     /// The tray icon, and closing the window to it.
     pub tray: bool,
+    /// The colour theme's name, or "Follow system".
+    pub theme: String,
 }
 
 impl Default for Preferences {
     fn default() -> Self {
-        Self { show_grid: false, tray: true }
+        Self { show_grid: false, tray: true, theme: crate::theme::DEFAULT.into() }
     }
 }
 
@@ -118,8 +120,11 @@ mod tests {
 
     #[test]
     fn round_trips_and_fills_gaps() {
-        let p = Preferences { show_grid: true, tray: false };
+        let p = Preferences { show_grid: true, tray: false, theme: "Nord".into() };
         assert_eq!(toml::from_str::<Preferences>(&toml::to_string(&p).unwrap()).unwrap(), p);
-        assert_eq!(toml::from_str::<Preferences>("show_grid = true").unwrap(), Preferences { show_grid: true, tray: true });
+        assert_eq!(
+            toml::from_str::<Preferences>("show_grid = true").unwrap(),
+            Preferences { show_grid: true, tray: true, theme: "Swarm".into() }
+        );
     }
 }

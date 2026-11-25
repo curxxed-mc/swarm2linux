@@ -1,13 +1,13 @@
-import { ScrollView } from "std-widgets.slint";
+import { ScrollView, Palette } from "std-widgets.slint";
 import { Theme } from "theme.slint";
-import { Headset, Choice, Prefs, About } from "state.slint";
+import { Headset, Choice, Prefs, About, ThemeChoice } from "state.slint";
 import { Rail, Header, Banner, Overlay, Toast, Page } from "shell.slint";
 import { SettingsPage } from "pages/settings.slint";
 import { EqualizerPage } from "pages/equalizer.slint";
 import { ControlsPage } from "pages/controls.slint";
 import { DevicePage } from "pages/device.slint";
 
-export { Headset, Choice, Prefs, About }
+export { Headset, Choice, Prefs, About, ThemeChoice, Theme }
 
 // The tray icon and its menu. It has its own copy of the globals; Rust fills both. Tray menus show no check
 // marks (Slint 1.18), so the labels say what is on.
@@ -109,6 +109,15 @@ export component AppWindow inherits Window {
         if (self.mic-preset != 0) {
             Headset.mic-eq-edited = false;
         }
+    }
+
+    // the standard widgets (text fields, scroll bars) follow the theme's light or dark
+    private property <bool> theme-dark: Theme.dark;
+    changed theme-dark => {
+        Palette.color-scheme = self.theme-dark ? ColorScheme.dark : ColorScheme.light;
+    }
+    init => {
+        Palette.color-scheme = self.theme-dark ? ColorScheme.dark : ColorScheme.light;
     }
 
     title: "swarm2linux";

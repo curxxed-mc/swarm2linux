@@ -128,7 +128,7 @@ component MicrophoneCard inherits Card {
                 height: 26px;
                 y: (parent.height - self.height) / 2;
                 border-radius: 13px;
-                background: Headset.mic-muted ? #3a1d22 : #16302a;
+                background: Headset.mic-muted ? Theme.bad-soft : Theme.good-soft;
                 Text {
                     text: Headset.mic-muted ? "Muted" : "Live";
                     color: Headset.mic-muted ? Theme.bad : Theme.good;

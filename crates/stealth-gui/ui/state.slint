@@ -107,8 +107,25 @@ export global About {
     in property <string> version;
 }
 
+// A card of the theme picker, drawn in the theme's own colours.
+export struct ThemeChoice {
+    name: string,
+    // "dark", "light", or what following the system picks
+    label: string,
+    background: color,
+    card: color,
+    text: color,
+    muted: color,
+    accent: color,
+    fill-end: color,
+    good: color,
+}
+
 // The app's own preferences, kept in ~/.config/swarm2linux/gui.toml.
 export global Prefs {
+    // the colour theme's name, or "Follow system"
+    in-out property <string> theme: "Swarm";
+    in property <[ThemeChoice]> themes;
     in-out property <bool> show-grid;
     in-out property <bool> tray: true;
     // whether the app starts (in the tray) when the user logs in

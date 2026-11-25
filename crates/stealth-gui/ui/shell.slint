@@ -40,7 +40,7 @@ export component Rail inherits Rectangle {
 
         for page[i] in root.pages: Rectangle {
             height: 62px;
-            background: i == root.current ? #181c23 : (item.has-hover ? #15181e : transparent);
+            background: i == root.current ? Theme.rail-active : (item.has-hover ? Theme.rail-hover : transparent);
             accessible-role: tab;
             accessible-label: page.title;
             accessible-checked: i == root.current;
@@ -223,10 +223,10 @@ export component Header {
 // Why settings cannot be changed right now, while stealthd runs.
 export component Banner inherits Rectangle {
     in property <string> text;
-    background: #2a2416;
+    background: Theme.warn-soft;
     border-radius: Theme.radius;
     border-width: 1px;
-    border-color: #4a3c1c;
+    border-color: Theme.warn-border;
     height: 44px;
 
     HorizontalLayout {
@@ -253,7 +253,7 @@ export component Banner inherits Rectangle {
 
 // Covers everything while stealthd is not running.
 export component Overlay inherits Rectangle {
-    background: #111419e6;
+    background: Theme.background.transparentize(10%);
 
     TouchArea { }
 
@@ -302,10 +302,10 @@ export component Overlay inherits Rectangle {
 // The last failed write, for a few seconds.
 export component Toast inherits Rectangle {
     visible: Headset.error != "";
-    background: #3a1d22;
+    background: Theme.bad-soft;
     border-radius: Theme.radius;
     border-width: 1px;
-    border-color: #6b2a33;
+    border-color: Theme.bad-border;
     height: 44px;
     width: Math.min(text.preferred-width + 48px, 640px);
 

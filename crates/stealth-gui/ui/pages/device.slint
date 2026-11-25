@@ -2,7 +2,7 @@
 
 import { AboutSlint, LineEdit } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
-import { Headset, Prefs, About } from "../state.slint";
+import { Headset, Prefs, About, ThemeChoice } from "../state.slint";
 import { Card, Label, Hint, Toggle, GradientSlider, Dropdown, InfoRow, OutlineButton, SavedItem } from "../widgets/controls.slint";
 
 // A setting name with its control on the right.
@@ -345,6 +345,94 @@ component NotificationsCard inherits Card {
     }
 }
 
+// One theme of the picker, in its own colours.
+component ThemeCard {
+    in property <ThemeChoice> choice;
+    in property <bool> current;
+    callback picked();
+
+    height: 86px;
+    accessible-role: button;
+    accessible-label: root.choice.name;
+    accessible-checked: root.current;
+    accessible-action-default => { root.picked(); }
+
+    Rectangle {
+        border-radius: 8px;
+        background: root.choice.background;
+        border-width: root.current ? 2px : 1px;
+        border-color: root.current ? Theme.accent : (touch.has-hover ? Theme.outline : Theme.line);
+        clip: true;
+
+        Rectangle {
+            x: 10px;
+            y: 10px;
+            width: parent.width - 20px;
+            height: parent.height - 20px;
+            border-radius: 5px;
+            background: root.choice.card;
+            VerticalLayout {
+                padding: 8px;
+                spacing: 4px;
+                Text {
+                    text: root.choice.name;
+                    color: root.choice.text;
+                    font-size: Theme.small-size;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: root.choice.label;
+                        color: root.choice.muted;
+                        font-size: 11px;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    for swatch in [root.choice.accent, root.choice.fill-end, root.choice.good]: Rectangle {
+                        width: 10px;
+                        height: 10px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 5px;
+                        background: swatch;
+                    }
+                }
+            }
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.picked(); }
+    }
+}
+
+// The colour theme: a card per theme, as many to a row as fit.
+component AppearanceCard inherits Card {
+    title: "Appearance";
+
+    grid := Rectangle {
+        property <length> gap: 10px;
+        property <int> columns: max(1, floor((self.width + self.gap) / (150px + self.gap)));
+        property <length> cell: (self.width - (self.columns - 1) * self.gap) / self.columns;
+        height: ceil(Prefs.themes.length / self.columns) * (86px + self.gap) - self.gap;
+        for choice[i] in Prefs.themes: ThemeCard {
+            x: mod(i, grid.columns) * (grid.cell + grid.gap);
+            y: floor(i / grid.columns) * (86px + grid.gap);
+            width: grid.cell;
+            choice: choice;
+            current: choice.name == Prefs.theme;
+            picked => {
+                Prefs.theme = choice.name;
+                Prefs.changed();
+            }
+        }
+    }
+    Hint {
+        text: "Swarm is the app's own look; the others are the palettes of the iced toolkit. Follow system uses Swarm while the desktop is dark and Light while it is light.";
+    }
+}
+
 component AboutCard inherits Card {
     title: "About";
 
@@ -397,6 +485,7 @@ export component DevicePage inherits HorizontalLayout {
         alignment: start;
         HubCard { }
         NotificationsCard { }
+        AppearanceCard { }
         AboutCard { }
     }
 }

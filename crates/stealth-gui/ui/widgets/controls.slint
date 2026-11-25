@@ -69,7 +69,7 @@ export component Toggle {
             y: 3px;
             x: root.checked ? parent.width - self.width - 3px : 3px;
             border-radius: 8px;
-            background: root.checked ? #ffffff : #7d838c;
+            background: root.checked ? Theme.knob : Theme.toggle-off;
             animate x { duration: 120ms; }
         }
     }
@@ -158,7 +158,9 @@ export component GradientSlider {
                 width: 16px;
                 height: 16px;
                 border-radius: 8px;
-                background: #ffffff;
+                background: Theme.knob;
+                border-width: 1px;
+                border-color: Theme.knob-border;
             }
 
             touch := TouchArea {
@@ -339,7 +341,7 @@ export component Segmented {
         spacing: 3px;
         for option[i] in root.options: Rectangle {
             border-radius: 3px;
-            background: i == root.current ? #313844 : (segment.has-hover && root.enabled ? Theme.hover : transparent);
+            background: i == root.current ? Theme.segment : (segment.has-hover && root.enabled ? Theme.hover : transparent);
             accessible-role: tab;
             accessible-label: option;
             accessible-checked: i == root.current;
@@ -455,12 +457,12 @@ export component OutlineButton {
     Rectangle {
         border-radius: self.height / 2;
         border-width: 1px;
-        border-color: root.enabled ? (root.primary ? Theme.accent : #4a515c) : Theme.line;
+        border-color: root.enabled ? (root.primary ? Theme.accent : Theme.outline) : Theme.line;
         background: root.primary && root.enabled ? Theme.accent : (press.has-hover && root.enabled ? Theme.hover : transparent);
     }
     label := Text {
         text: root.text;
-        color: root.enabled ? Theme.text : Theme.dim;
+        color: !root.enabled ? Theme.dim : (root.primary ? Theme.on-accent : Theme.text);
         font-size: Theme.label-size;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -538,7 +540,7 @@ export component SavedItem {
         if !root.confirming: Rectangle {
             width: 30px;
             border-radius: 4px;
-            background: bin.has-hover ? #3a1d22 : transparent;
+            background: bin.has-hover ? Theme.bad-soft : transparent;
             accessible-role: button;
             accessible-label: "Delete " + root.name;
             accessible-action-default => { root.confirming = true; }

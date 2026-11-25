@@ -1,25 +1,55 @@
-// Colours and sizes, after Swarm II's dark look.
+// Colours and sizes. The defaults are the "Swarm" theme, after Swarm II's dark look; Rust sets the colours of the
+// theme chosen on the Device page (src/theme.rs).
 
 export global Theme {
-    out property <color> background: #111419;
-    out property <color> rail: #0e1014;
-    out property <color> line: #232831;
-    out property <brush> card: @linear-gradient(160deg, #1d222b 0%, #191d25 100%);
-    out property <color> field: #252b34;
-    out property <color> hover: #262d37;
-    out property <color> popup: #20262f;
+    // whether the theme is dark (the standard widgets follow it)
+    in-out property <bool> dark: true;
 
-    out property <color> text: #e9ebee;
-    out property <color> muted: #8d949e;
-    out property <color> dim: #5b626c;
+    in-out property <color> background: #111419;
+    in-out property <color> rail: #0e1014;
+    in-out property <color> rail-hover: #15181e;
+    in-out property <color> rail-active: #181c23;
+    in-out property <color> line: #232831;
+    in-out property <color> card-top: #1d222b;
+    in-out property <color> card-bottom: #191d25;
+    out property <brush> card: @linear-gradient(160deg, card-top 0%, card-bottom 100%);
+    // sunken areas: the EQ graph's plot, the earcup drawing
+    in-out property <color> inset: #1f242c;
+    in-out property <color> field: #252b34;
+    in-out property <color> hover: #262d37;
+    in-out property <color> popup: #20262f;
+    // the chosen segment of a segmented control
+    in-out property <color> segment: #313844;
+    // borders of buttons and outlines
+    in-out property <color> outline: #4a515c;
 
-    out property <color> accent: #7b45f5;
-    out property <brush> fill: @linear-gradient(90deg, #6b3ef0 0%, #e2459c 100%);
-    out property <color> track: #3a3f48;
-    out property <color> selected: #3dd6b8;
-    out property <color> good: #35c47f;
-    out property <color> warn: #e3a23f;
-    out property <color> bad: #e5484d;
+    in-out property <color> text: #e9ebee;
+    in-out property <color> muted: #8d949e;
+    in-out property <color> dim: #5b626c;
+
+    in-out property <color> accent: #7b45f5;
+    // text on the accent colour
+    in-out property <color> on-accent: #ffffff;
+    in-out property <color> fill-start: #6b3ef0;
+    in-out property <color> fill-end: #e2459c;
+    out property <brush> fill: @linear-gradient(90deg, fill-start 0%, fill-end 100%);
+    // the 0 dB label of the EQ graph
+    in-out property <color> highlight: #9fc3ff;
+    in-out property <color> track: #3a3f48;
+    in-out property <color> knob: #ffffff;
+    // the knob's outline, which only light themes need
+    in-out property <color> knob-border: #ffffff;
+    in-out property <color> toggle-off: #7d838c;
+    in-out property <color> selected: #3dd6b8;
+    in-out property <color> selected-soft: #173a35;
+    in-out property <color> good: #35c47f;
+    in-out property <color> good-soft: #16302a;
+    in-out property <color> warn: #e3a23f;
+    in-out property <color> warn-soft: #2a2416;
+    in-out property <color> warn-border: #4a3c1c;
+    in-out property <color> bad: #e5484d;
+    in-out property <color> bad-soft: #3a1d22;
+    in-out property <color> bad-border: #6b2a33;
 
     out property <length> title-size: 17px;
     out property <length> label-size: 14px;

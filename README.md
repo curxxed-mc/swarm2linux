@@ -372,7 +372,9 @@ A Slint app in the style of Swarm II, with four pages:
   presets.
 - **Controls:** what the mode button and the assignable wheel do.
 - **Device:** battery, transmitters and firmware, profiles, auto shut-off and wake on motion, the charging hub's
-  LEDs, battery pop-ups, the tray icon and starting with the session.
+  LEDs, battery pop-ups, the tray icon, starting with the session, and the colour theme: Swarm (the app's own
+  look), the 22 palettes of the iced toolkit (Dracula, Nord, Solarized, Gruvbox, Catppuccin, Tokyo Night,
+  Kanagawa and more, light and dark), or following the desktop's light or dark mode.
 
 It is a client of `stealthd` and needs it running. The tray icon shows the battery as a headset whose ear cups
 fill up, with a red badge under the headband while the mic is muted. Its menu switches noise cancellation,

@@ -7,6 +7,7 @@ mod bridge;
 mod instance;
 mod model;
 mod prefs;
+mod theme;
 mod tray;
 
 slint::include_modules!();
@@ -106,6 +107,8 @@ impl Window {
         connect_equalizer(&ui, &self.bridge);
         connect_profiles(&ui);
         connect_prefs(&ui, self.tray.clone());
+        theme::apply(&ui);
+        theme::watch_system(ui.as_weak());
         if let Some(page) = std::env::var("STEALTH_GUI_PAGE").ok().and_then(|s| s.parse().ok()) {
             ui.set_page(page);
         }
@@ -135,12 +138,16 @@ fn connect_prefs(ui: &AppWindow, tray: slint::Weak<Tray>) {
     let saved = prefs::load();
     p.set_show_grid(saved.show_grid);
     p.set_tray(saved.tray);
+    p.set_themes(theme::choices());
+    p.set_theme(if theme::known(&saved.theme) { saved.theme.as_str() } else { theme::DEFAULT }.into());
     p.set_autostart(prefs::autostart());
     let weak = ui.as_weak();
     p.on_changed(move || {
         let (Some(ui), Some(tray)) = (weak.upgrade(), tray.upgrade()) else { return };
         let p = ui.global::<Prefs>();
-        if let Err(e) = prefs::save(&prefs::Preferences { show_grid: p.get_show_grid(), tray: p.get_tray() }) {
+        theme::apply(&ui);
+        let saved = prefs::Preferences { show_grid: p.get_show_grid(), tray: p.get_tray(), theme: p.get_theme().into() };
+        if let Err(e) = prefs::save(&saved) {
             eprintln!("stealth-gui: saving preferences: {e}");
         }
         let shown = if p.get_tray() { tray.show() } else { tray.hide() };
