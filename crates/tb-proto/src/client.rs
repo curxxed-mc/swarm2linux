@@ -33,13 +33,18 @@ pub struct Client<T: ReportIo> {
     pub retries: u8,
 }
 
-/// Open a device (the given hidraw path, or the first Turtle Beach device with the vendor collection) and
+/// Open a device (the given hidraw path, or the first known Stealth Pro II device with the vendor collection) and
 /// start a session the way Swarm II does: drop stale queued bytes, then subscribe to `Inf`. An idle
 /// transmitter ignores other requests until it has seen that opener.
 pub fn open(path: Option<&Path>) -> Result<Client<HidrawDevice>> {
     let path = match path {
         Some(p) => p.to_path_buf(),
-        None => discover()?.into_iter().find(|d| d.vendor_collection).ok_or(Error::NoDevice)?.path,
+        // only products this protocol was checked on; other Turtle Beach devices may share the vendor collection
+        None => discover()?
+            .into_iter()
+            .find(|d| d.vendor_collection && race_hid::known_product(d.pid).is_some())
+            .ok_or(Error::NoDevice)?
+            .path,
     };
     let mut client = Client::new(HidrawDevice::open(path)?);
     client.drain()?;

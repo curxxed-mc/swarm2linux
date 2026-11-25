@@ -18,6 +18,9 @@ pub enum Command {
     SavePreset(String, String),
     DeletePreset(String, String),
     BatteryNotifications(bool),
+    SaveProfile(String),
+    ApplyProfile(String),
+    DeleteProfile(String),
 }
 
 /// What the link reports.
@@ -86,6 +89,9 @@ pub fn start(report: impl Fn(Event) + Send + Sync + 'static) -> zbus::Result<Lin
                 Command::SavePreset(eq, name) => client.save_preset(eq, name),
                 Command::DeletePreset(eq, name) => client.delete_preset(eq, name),
                 Command::BatteryNotifications(on) => client.set_battery_notifications(*on),
+                Command::SaveProfile(name) => client.save_profile(name),
+                Command::ApplyProfile(name) => client.apply_profile(name),
+                Command::DeleteProfile(name) => client.delete_profile(name),
             };
             if let Err(e) = result {
                 report(Event::WriteFailed(describe(&e)));

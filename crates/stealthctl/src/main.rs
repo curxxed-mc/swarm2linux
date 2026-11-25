@@ -88,6 +88,11 @@ enum Cmd {
         #[command(subcommand)]
         cmd: HubCmd,
     },
+    /// Saved sets of settings, kept by stealthd in ~/.config/swarm2linux/profiles/
+    Profile {
+        #[command(subcommand)]
+        cmd: ProfileCmd,
+    },
     /// Print every record as JSON (direct access only)
     Dump,
     /// Print one record as JSON, e.g. GSI or SAF (direct access only)
@@ -122,6 +127,21 @@ enum EqCmd {
     /// Save the current bands as a custom preset (up to 5, names up to 16 characters)
     Save { name: String },
     /// Delete a custom preset
+    Delete { name: String },
+}
+
+#[derive(Subcommand)]
+enum ProfileCmd {
+    /// List the saved profiles; * marks the selected one
+    List,
+    /// Save the current settings (noise cancellation, Superhuman Hearing, microphone, both EQs, button and wheel)
+    /// as a profile, replacing one of the same name; without a name, into the selected profile
+    Save { name: Option<String> },
+    /// Select and apply a saved profile
+    Apply { name: String },
+    /// Undo the changes made since the selected profile was applied
+    Revert,
+    /// Delete a saved profile
     Delete { name: String },
 }
 
@@ -372,6 +392,7 @@ fn main() -> Result<()> {
             HubCmd::Led1 { level } => b.set("hub_led_1", Typed::Int(level)),
             HubCmd::Led2 { level } => b.set("hub_led_2", Typed::Int(level)),
         },
+        Cmd::Profile { cmd } => profile(b, cmd),
         Cmd::Dump => {
             let state = read_all(b.direct()?)?;
             println!("{}", serde_json::to_string_pretty(&state.to_json())?);
@@ -384,9 +405,10 @@ fn main() -> Result<()> {
         }
         Cmd::Set { key, value } => {
             let client = b.direct()?;
-            match value.parse::<i64>() {
-                Ok(n) => client.set(key, n)?,
-                Err(_) => client.set_text(key, &value)?,
+            match keys::writable(key).map(|s| s.values) {
+                // a preset name can be digits too
+                Some(keys::Values::Text(_)) => client.set_text(key, &value)?,
+                _ => client.set(key, value.parse().with_context(|| format!("{key:#x} takes a number"))?)?,
             }
             show_updates(client)
         }
@@ -579,6 +601,61 @@ fn status(b: &mut Backend, device: Option<&Path>) -> Result<()> {
         on(&v, "wake_on_motion")
     );
     println!("Charging hub  LED 1 {}, LED 2 {}", num(&v, "hub_led_1"), num(&v, "hub_led_2"));
+    if let Some(active) = text(&v, "active_profile").filter(|a| !a.is_empty()) {
+        let modified = if on(&v, "profile_modified") == "on" { " (modified)" } else { "" };
+        println!("Profile       {active}{modified}");
+    }
+    Ok(())
+}
+
+fn profile(b: &mut Backend, cmd: ProfileCmd) -> Result<()> {
+    let Backend::Daemon(d) = b else {
+        bail!("profiles are kept by stealthd; start it first (systemctl --user start stealthd)");
+    };
+    match cmd {
+        ProfileCmd::List => {
+            let v = d.values()?;
+            let names = match v.get("profiles") {
+                Some(Typed::Texts(names)) => names.clone(),
+                _ => Vec::new(),
+            };
+            if names.is_empty() {
+                println!("No profiles yet. Save the current settings with: stealthctl profile save <name>");
+            }
+            let active = text(&v, "active_profile").unwrap_or("");
+            let modified = on(&v, "profile_modified") == "on";
+            for name in names {
+                let mark = if name == active { "*" } else { " " };
+                let note = if name == active && modified { "  (modified; `profile save` keeps the changes, `profile revert` undoes them)" } else { "" };
+                println!("{mark} {name}{note}");
+            }
+        }
+        ProfileCmd::Save { name } => {
+            let name = match name {
+                Some(name) => name,
+                None => text(&d.values()?, "active_profile")
+                    .filter(|a| !a.is_empty())
+                    .context("no profile is selected; give a name")?
+                    .to_string(),
+            };
+            d.save_profile(&name).map_err(|e| anyhow::anyhow!(stealth_dbus::link::describe(&e)))?;
+            println!("saved the current settings as {name:?}");
+        }
+        ProfileCmd::Revert => {
+            let v = d.values()?;
+            let name = text(&v, "active_profile").filter(|a| !a.is_empty()).context("no profile is selected")?;
+            d.apply_profile(name).map_err(|e| anyhow::anyhow!(stealth_dbus::link::describe(&e)))?;
+            println!("back to {name:?}");
+        }
+        ProfileCmd::Apply { name } => {
+            d.apply_profile(&name).map_err(|e| anyhow::anyhow!(stealth_dbus::link::describe(&e)))?;
+            println!("applied {name:?}");
+        }
+        ProfileCmd::Delete { name } => {
+            d.delete_profile(&name).map_err(|e| anyhow::anyhow!(stealth_dbus::link::describe(&e)))?;
+            println!("deleted {name:?}");
+        }
+    }
     Ok(())
 }
 
@@ -620,7 +697,12 @@ fn equalizer(b: &mut Backend, eq: &EqKeys, cmd: EqCmd) -> Result<()> {
             };
             b.set(&format!("{name}_eq_preset"), Typed::Int(number))
         }
-        EqCmd::Band { band, db } => b.set_band(eq, band, ((db * 10.0) / 5.0).round() as i64 * 5),
+        EqCmd::Band { band, db } => {
+            if !db.is_finite() || !(-9.0..=9.0).contains(&db) {
+                bail!("a band is -9.0 to 9.0 dB");
+            }
+            b.set_band(eq, band, ((db * 10.0) / 5.0).round() as i64 * 5)
+        }
         EqCmd::Save { name } => b.save_preset(eq, &name),
         EqCmd::Delete { name } => b.delete_preset(eq, &name),
     }
@@ -682,10 +764,28 @@ fn watch(b: &mut Backend, limit: Option<Duration>) -> Result<()> {
 
 fn restore(client: &mut Device, file: &PathBuf) -> Result<()> {
     let snap: Value = serde_json::from_str(&fs::read_to_string(file)?)?;
+    // the charging hub's LEDs live inside TX1's record, as elements 1 and 2 of its `control` list
+    let led = |key: u16| match key {
+        keys::HUB_LED_1 => Some(1),
+        keys::HUB_LED_2 => Some(2),
+        _ => None,
+    };
+    let number = |v: &Value| v.as_str()?.parse::<i64>().ok();
+    let tx1 = format!("{:x}", keys::TRANSMITTERS[0]);
     let saved = |key: u16| -> Option<i64> {
-        snap.as_object()?.values().find_map(|kvp| kvp.get(format!("{key:x}"))?.as_str()?.parse().ok())
+        let records = snap.as_object()?.values();
+        match led(key) {
+            Some(i) => records.clone().find_map(|kvp| number(kvp.get(&tx1)?.get("control")?.get(i)?)),
+            None => records.clone().find_map(|kvp| number(kvp.get(format!("{key:x}"))?)),
+        }
     };
     let current = read_all(client)?;
+    let now = |key: u16| -> Option<i64> {
+        match led(key) {
+            Some(i) => number(current.raw(keys::TRANSMITTERS[0])?.get("control")?.get(i)?),
+            None => current.int(key),
+        }
+    };
 
     // Selecting an EQ preset rewrites the bands and turns Superhuman Hearing off, so the EQs go first and
     // Superhuman Hearing last. Custom presets themselves are not recreated.
@@ -705,10 +805,13 @@ fn restore(client: &mut Device, file: &PathBuf) -> Result<()> {
     }
     keys_in_order.push(keys::SUPERHUMAN_HEARING);
 
-    let todo: Vec<(u16, i64)> = keys_in_order
-        .into_iter()
-        .filter_map(|key| saved(key).filter(|&v| current.int(key) != Some(v)).map(|v| (key, v)))
-        .collect();
+    let mut todo: Vec<(u16, i64)> =
+        keys_in_order.into_iter().filter_map(|key| saved(key).filter(|&v| now(key) != Some(v)).map(|v| (key, v))).collect();
+    // an EQ change switches Superhuman Hearing off: switch it on again if the snapshot has it on
+    let eq_changes = todo.iter().any(|&(key, _)| is_eq(key));
+    if eq_changes && saved(keys::SUPERHUMAN_HEARING) == Some(1) && todo.last().map(|t| t.0) != Some(keys::SUPERHUMAN_HEARING) {
+        todo.push((keys::SUPERHUMAN_HEARING, 1));
+    }
     if todo.is_empty() {
         println!("already matches the snapshot");
         return Ok(());

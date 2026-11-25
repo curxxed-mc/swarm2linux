@@ -20,7 +20,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use anyhow::Result;
-use slint::ComponentHandle;
+use slint::{ComponentHandle, Model};
 use stealth_dbus::link::{Command, Link};
 use stealth_dbus::view::EqEdit;
 use tb_proto::values::Typed;
@@ -104,6 +104,7 @@ impl Window {
         ui.global::<About>().set_version(env!("CARGO_PKG_VERSION").into());
         connect_writes(&ui.global::<Headset>(), &self.bridge);
         connect_equalizer(&ui, &self.bridge);
+        connect_profiles(&ui);
         connect_prefs(&ui, self.tray.clone());
         if let Some(page) = std::env::var("STEALTH_GUI_PAGE").ok().and_then(|s| s.parse().ok()) {
             ui.set_page(page);
@@ -169,6 +170,12 @@ fn connect_writes(h: &Headset<'_>, bridge: &Link) {
     h.on_delete_preset(move |eq, name| b.send(Command::DeletePreset(eq.into(), name.into())));
     let b = bridge.clone();
     h.on_set_battery_notifications(move |on| b.send(Command::BatteryNotifications(on)));
+    let b = bridge.clone();
+    h.on_save_profile(move |name| b.send(Command::SaveProfile(name.into())));
+    let b = bridge.clone();
+    h.on_apply_profile(move |name| b.send(Command::ApplyProfile(name.into())));
+    let b = bridge.clone();
+    h.on_delete_profile(move |name| b.send(Command::DeleteProfile(name.into())));
 }
 
 /// The equalizer page's name check and Cancel.
@@ -197,6 +204,16 @@ fn connect_equalizer(ui: &AppWindow, bridge: &Link) {
             b.send(command);
         }
         model::show_equalizer(&h, &eq, edit.preset, &edit.bands);
+    });
+}
+
+/// The profile card's name checks.
+fn connect_profiles(ui: &AppWindow) {
+    let h = ui.global::<Headset>();
+    h.on_profile_name_problem(|name| tb_proto::profile::name_problem(&name).into());
+    let weak = ui.as_weak();
+    h.on_profile_exists(move |name| {
+        weak.upgrade().is_some_and(|ui| ui.global::<Headset>().get_profiles().iter().any(|p| p == name))
     });
 }
 

@@ -5,6 +5,7 @@ mod client;
 mod doc;
 mod frame;
 pub mod keys;
+pub mod profile;
 mod state;
 pub mod values;
 

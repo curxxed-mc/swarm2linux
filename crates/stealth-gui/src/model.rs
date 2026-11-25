@@ -61,6 +61,9 @@ fn target(name: &str) -> Option<Target> {
         "mic_eq_name" => Text(|h, v| h.set_mic_eq_name(v)),
         "mic_eq_bands" => Ints(|h, v| h.set_mic_eq_bands(v)),
         "mic_eq_slots" => Texts(|h, v| h.set_mic_eq_slots(v)),
+        "profiles" => Texts(|h, v| h.set_profiles(v)),
+        "active_profile" => Text(|h, v| h.set_active_profile(v)),
+        "profile_modified" => Bool(|h, v| h.set_profile_modified(v)),
         _ => return None,
     })
 }

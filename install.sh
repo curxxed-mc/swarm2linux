@@ -130,7 +130,7 @@ install_all() {
         list=$(printf '%s, ' "${missing[@]}")
         note "Missing: ${list%, }."
         ask "Install them with: sudo $cmd ?" || die "not installing packages. Run: sudo $cmd"
-        if have apt-get; then as_root apt-get update; fi
+        if [[ $cmd == apt-get* ]]; then as_root apt-get update; fi
         # shellcheck disable=SC2086 # the command is split into words on purpose
         as_root $cmd
     else
@@ -178,7 +178,8 @@ install_all() {
     cargo build --release --locked
 
     step "Installing"
-    case $BIN in *[\"\`\$\\]*) die "cannot name $BIN in a desktop entry" ;; esac
+    # characters that would break the desktop entry's Exec= line or the sed commands below
+    case $BIN in *[\"\`\$\\\|\&%]* | *$'\n'*) die "cannot name $BIN in a desktop entry" ;; esac
     for p in "${PROGRAMS[@]}"; do
         put 755 "target/release/$p" "$BIN/$p"
     done

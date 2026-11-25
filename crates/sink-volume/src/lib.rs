@@ -6,9 +6,11 @@
 //! headset's USB sound card.
 
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -50,17 +52,54 @@ pub fn set_percent(id: u32, percent: i64) -> io::Result<()> {
     run(cmd).map(drop)
 }
 
-fn run(mut cmd: Command) -> io::Result<Vec<u8>> {
+/// How long `pw-dump` or `wpctl` may take: a PipeWire that hangs must not hang the caller with it.
+const TIMEOUT: Duration = Duration::from_secs(5);
+
+fn run(cmd: Command) -> io::Result<Vec<u8>> {
+    run_for(cmd, TIMEOUT)
+}
+
+/// Run a program and return its output; it is killed if it takes longer than `timeout`.
+fn run_for(mut cmd: Command, timeout: Duration) -> io::Result<Vec<u8>> {
     let program = cmd.get_program().to_string_lossy().into_owned();
-    let out = cmd.output().map_err(|e| match e.kind() {
-        io::ErrorKind::NotFound => io::Error::new(e.kind(), format!("{program} is not installed (it comes with PipeWire)")),
-        _ => io::Error::new(e.kind(), format!("running {program}: {e}")),
+    let mut child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| {
+        match e.kind() {
+            io::ErrorKind::NotFound => {
+                io::Error::new(e.kind(), format!("{program} is not installed (it comes with PipeWire)"))
+            }
+            _ => io::Error::new(e.kind(), format!("running {program}: {e}")),
+        }
     })?;
-    if !out.status.success() {
-        let why = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    // read the output while waiting, so a full pipe cannot stall the program
+    let reader = |pipe: Option<Box<dyn Read + Send>>| {
+        thread::spawn(move || {
+            let mut out = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut out);
+            }
+            out
+        })
+    };
+    let stdout = reader(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let stderr = reader(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(io::Error::new(io::ErrorKind::TimedOut, format!("{program} did not finish in time")));
+        }
+        thread::sleep(Duration::from_millis(20));
+    };
+    let (out, err) = (stdout.join().unwrap_or_default(), stderr.join().unwrap_or_default());
+    if !status.success() {
+        let why = String::from_utf8_lossy(&err).trim().to_string();
         return Err(io::Error::other(format!("{program} failed: {why}")));
     }
-    Ok(out.stdout)
+    Ok(out)
 }
 
 /// The lowest-numbered `Audio/Sink` node of card `card` in a `pw-dump` listing.
@@ -95,6 +134,20 @@ fn number(v: &Value) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn programs_are_run_with_a_time_limit() {
+        let mut echo = Command::new("echo");
+        echo.arg("hi");
+        assert_eq!(run_for(echo, Duration::from_secs(5)).unwrap(), b"hi\n");
+        assert!(run_for(Command::new("false"), Duration::from_secs(5)).is_err());
+        let mut sleep = Command::new("sleep");
+        sleep.arg("5");
+        let start = Instant::now();
+        let e = run_for(sleep, Duration::from_millis(200)).unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::TimedOut);
+        assert!(start.elapsed() < Duration::from_secs(2));
+    }
+
     use super::*;
 
     fn node(id: u32, class: &str, card: Value, volumes: &[f64], mute: bool) -> Value {

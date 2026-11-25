@@ -72,6 +72,11 @@ export global Headset {
     // stealthd's own setting: warn about a low battery
     in-out property <bool> battery-notifications: true;
 
+    // the saved profiles' names, the selected one ("" for none), and whether the settings differ from it
+    in-out property <[string]> profiles;
+    in-out property <string> active-profile;
+    in-out property <bool> profile-modified;
+
     // whether settings can be changed now
     out property <bool> available: daemon-running && connected && headset-link;
 
@@ -85,11 +90,17 @@ export global Headset {
     callback save-preset(eq: string, name: string);
     callback delete-preset(eq: string, name: string);
     callback set-battery-notifications(on: bool);
+    callback save-profile(name: string);
+    callback apply-profile(name: string);
+    callback delete-profile(name: string);
     // remember the preset and bands before the first change, and go back to them
     callback eq-edit-started(eq: string);
     callback eq-edit-cancelled(eq: string);
     // why a name cannot be used for a new preset, or "" if it can
     pure callback preset-name-problem(eq: string, name: string) -> string;
+    // why a name cannot name a profile, or "" if it can
+    pure callback profile-name-problem(name: string) -> string;
+    pure callback profile-exists(name: string) -> bool;
 }
 
 export global About {

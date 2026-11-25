@@ -8,6 +8,7 @@
 //! - `Set(s name, v value)`: set a boolean or integer value, e.g. `("anc", true)` or `("sink_volume", 50)`
 //! - `SetBand(s eq, u band, i tenths)`: one band (1–10) of the `"game"` or `"mic"` equalizer, in tenths of a dB
 //! - `SavePreset(s eq, s name)`, `DeletePreset(s eq, s name)`: custom EQ presets
+//! - `SaveProfile(s name)`, `ApplyProfile(s name)`, `DeleteProfile(s name)`: profiles (see `tb_proto::profile`)
 //! - signal `Changed(a{sv})`: the values that changed
 //! - property `Connected` (b)
 //! - property `BatteryNotifications` (b, writable): whether stealthd warns about a low battery
@@ -31,17 +32,25 @@ pub const PATH: &str = "/io/github/swarm2linux/Headset";
 pub const INTERFACE: &str = "io.github.swarm2linux.Headset1";
 
 /// Values that come from the daemon rather than the headset's records: whether a device is connected, its label,
-/// whether the headset's radio link is up, and the headset's volume in PipeWire in percent (`-1` when unknown;
-/// writable with `Set`, 0 to 100).
-pub const DAEMON_NAMES: [&str; 4] = ["connected", "device", "headset_link", "sink_volume"];
+/// whether the headset's radio link is up, the headset's volume in PipeWire in percent (`-1` when unknown;
+/// writable with `Set`, 0 to 100), the saved profiles' names, the selected profile ("" for none) and whether the
+/// headset's settings differ from it.
+pub const DAEMON_NAMES: [&str; 7] =
+    ["connected", "device", "headset_link", "sink_volume", "profiles", "active_profile", "profile_modified"];
+
+/// An integer as D-Bus `i`. Out-of-range numbers saturate rather than wrap, so they stay out of range and are
+/// refused instead of becoming a different, valid value.
+fn to_i32(n: i64) -> i32 {
+    n.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
 
 /// The D-Bus form of a value.
 pub fn to_value(v: &Typed) -> Value<'static> {
     match v {
         Typed::Bool(b) => Value::from(*b),
-        Typed::Int(n) => Value::from(*n as i32),
+        Typed::Int(n) => Value::from(to_i32(*n)),
         Typed::Text(s) => Value::from(s.clone()),
-        Typed::Ints(list) => Value::from(list.iter().map(|&n| n as i32).collect::<Vec<i32>>()),
+        Typed::Ints(list) => Value::from(list.iter().map(|&n| to_i32(n)).collect::<Vec<i32>>()),
         Typed::Texts(list) => Value::from(list.clone()),
     }
 }
@@ -63,6 +72,8 @@ pub fn from_value(v: &Value<'_>) -> Option<Typed> {
         Value::I64(n) => Typed::Int(*n),
         Value::Str(s) => Typed::Text(s.to_string()),
         Value::Value(inner) => return from_value(inner),
+        // an empty list keeps its type from the array's signature
+        Value::Array(a) if a.is_empty() && a.element_signature().to_string() == "s" => Typed::Texts(Vec::new()),
         Value::Array(a) => {
             let items: Vec<Typed> = a.iter().map(from_value).collect::<Option<_>>()?;
             if items.iter().all(|t| matches!(t, Typed::Text(_))) && !items.is_empty() {
@@ -138,6 +149,19 @@ impl DaemonClient {
         self.proxy.call::<_, _, ()>("DeletePreset", &(eq, name))
     }
 
+    /// Save the headset's current settings as a profile, replacing one of the same name.
+    pub fn save_profile(&self, name: &str) -> zbus::Result<()> {
+        self.proxy.call::<_, _, ()>("SaveProfile", &(name,))
+    }
+
+    pub fn apply_profile(&self, name: &str) -> zbus::Result<()> {
+        self.proxy.call::<_, _, ()>("ApplyProfile", &(name,))
+    }
+
+    pub fn delete_profile(&self, name: &str) -> zbus::Result<()> {
+        self.proxy.call::<_, _, ()>("DeleteProfile", &(name,))
+    }
+
     /// Whether stealthd warns about a low battery.
     pub fn battery_notifications(&self) -> zbus::Result<bool> {
         self.proxy.get_property("BatteryNotifications")
@@ -169,8 +193,10 @@ mod tests {
             Typed::Text("Bass Boost".into()),
             Typed::Ints(vec![50, 50, 35, 0, 0, 0, 0, 0, 0, 0]),
             Typed::Texts(vec!["TEST".into(), "".into()]),
+            Typed::Texts(Vec::new()),
         ] {
             assert_eq!(from_value(&to_value(&v)), Some(v));
         }
+        assert_eq!(from_value(&to_value(&Typed::Int(4_294_967_346))), Some(Typed::Int(i64::from(i32::MAX))));
     }
 }

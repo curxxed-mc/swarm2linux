@@ -114,14 +114,19 @@ impl ReportIo for HidrawDevice {
         if race.len() > MAX_STREAM {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "RACE packet longer than one report"));
         }
-        if race.len() >= 6 {
-            let cmd = u16::from_le_bytes([race[4], race[5]]);
-            if FORBIDDEN_CMDS.iter().any(|&(lo, hi)| (lo..=hi).contains(&cmd)) {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    format!("refusing to send RACE command {cmd:04x}"),
-                ));
-            }
+        // exactly one well-formed RACE packet, so the command checked below is the only one sent
+        let framed = race.len() >= 6
+            && race[0] == 0x05
+            && usize::from(u16::from_le_bytes([race[2], race[3]])) + 4 == race.len();
+        if !framed {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a single RACE packet"));
+        }
+        let cmd = u16::from_le_bytes([race[4], race[5]]);
+        if FORBIDDEN_CMDS.iter().any(|&(lo, hi)| (lo..=hi).contains(&cmd)) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("refusing to send RACE command {cmd:04x}"),
+            ));
         }
         let mut report = [0u8; REPORT_SIZE];
         report[0] = REPORT_OUT;

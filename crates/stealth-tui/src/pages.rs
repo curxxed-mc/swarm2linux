@@ -13,7 +13,7 @@ pub fn cards(page: Page, app: &App) -> (Vec<Card>, &'static [&'static [usize]]) 
     let v = &app.values;
     match page {
         Page::Settings => (settings(v), &[&[0], &[1]]),
-        Page::Device => (device(app), &[&[0, 1], &[2, 3, 4]]),
+        Page::Device => (device(app), &[&[0, 5, 1], &[2, 3, 4]]),
         _ => (Vec::new(), &[]),
     }
 }
@@ -121,10 +121,33 @@ fn device(app: &App) -> Vec<Card> {
                     "An unofficial Linux app for the Turtle Beach Stealth Pro II, not affiliated with Turtle Beach."
                         .into(),
                 ),
+                Row::Gap,
+                Row::Info("Fork by", "curxxed-mc".into(), None),
+                Row::Text("github.com/curxxed-mc/swarm2linux".into()),
+                Row::Info("Based on", "swarm2linux by tbt9czsdd4-droid".into(), None),
                 Row::Text("github.com/tbt9czsdd4-droid/swarm2linux".into()),
             ],
         },
+        Card { title: "Profiles", rows: profile_rows(v) },
     ]
+}
+
+/// The Profiles card: the selected profile, Save and Revert while it is modified, and saving a new one.
+fn profile_rows(v: &Values) -> Vec<Row> {
+    let mut rows = vec![Row::Control(Control::Profile)];
+    if !v.text("active_profile").is_empty() && v.flag("profile_modified") {
+        rows.push(Row::Info("Changes", "not saved".into(), Some(theme::WARN)));
+        rows.push(Row::Control(Control::UpdateProfile));
+        rows.push(Row::Control(Control::RevertProfile));
+        rows.push(Row::Gap);
+    }
+    rows.push(Row::Control(Control::SaveProfile));
+    rows.push(Row::Hint(
+        "A profile holds noise cancellation, Superhuman Hearing, the microphone settings, both equalizers, and the \
+         button and wheel functions. Changes after choosing one show here until you save or revert them."
+            .into(),
+    ));
+    rows
 }
 
 /// A preset in the equalizer's list.

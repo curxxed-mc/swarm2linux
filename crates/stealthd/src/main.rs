@@ -6,10 +6,15 @@
 //! Bus name `io.github.swarm2linux.Stealthd`, object `/io/github/swarm2linux/Headset`, interface
 //! `io.github.swarm2linux.Headset1`. Value names are those of `tb_proto::values`.
 //!
-//! Its own settings are kept in `~/.config/swarm2linux/stealthd.toml`.
+//! Its own settings are kept in `~/.config/swarm2linux/stealthd.toml`, profiles in `~/.config/swarm2linux/profiles/`
+//! (see `profiles`).
 //!
 //! Besides the headset's values it serves `sink_volume`: the headset's volume in PipeWire, which it reads and sets
-//! through the `sink-volume` crate.
+//! through the `sink-volume` crate, and `profiles` (the saved profiles' names), `active_profile` (the selected
+//! profile, or "": the one last applied or saved, kept across restarts) and `profile_modified` (whether the headset's
+//! settings differ from the selected profile).
+
+mod profiles;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -26,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use sink_volume::Sink;
 use stealth_dbus::{BUS_NAME, INTERFACE, PATH, from_value, to_owned_value, to_value};
 use tb_proto::keys::{self, EqKeys};
+use tb_proto::profile::{self, Profile, Step};
 use tb_proto::values::{self, Typed};
 use tb_proto::{Client, State};
 use zbus::blocking::Connection;
@@ -57,6 +63,7 @@ enum Op {
     DeletePreset { eq: &'static EqKeys, name: String },
     /// The headset's volume in PipeWire, in percent.
     SinkVolume(i64),
+    ApplyProfile(Profile),
 }
 
 struct Request {
@@ -70,6 +77,59 @@ struct Shared {
     device: Option<String>,
     values: BTreeMap<&'static str, Typed>,
     settings: Settings,
+    profiles: BTreeMap<String, Profile>,
+    /// Whether the settings differ from the selected profile, as last signalled.
+    modified: bool,
+}
+
+impl Shared {
+    fn profile_names(&self) -> Typed {
+        Typed::Texts(self.profiles.keys().cloned().collect())
+    }
+
+    /// Whether the headset is there to be read and written: a transmitter, and the headset linked to it.
+    fn headset_available(&self) -> bool {
+        self.device.is_some() && self.values.get("headset_link") == Some(&Typed::Bool(true))
+    }
+
+    /// Whether the headset's settings differ from the selected profile (never while the headset is away, when its
+    /// settings are not known).
+    fn differs_from_profile(&self) -> bool {
+        self.headset_available()
+            && self.profiles.get(&self.settings.profile).is_some_and(|p| !p.plan(&self.values).is_empty())
+    }
+
+    /// Bring `modified` up to date, noting a change in `changed`.
+    fn update_modified(&mut self, changed: &mut HashMap<String, Value<'static>>) {
+        let modified = self.differs_from_profile();
+        if modified != self.modified {
+            self.modified = modified;
+            changed.insert("profile_modified".into(), Value::from(modified));
+        }
+    }
+
+    /// Select a profile ("" for none) and keep the choice, noting a change in `changed`. A name that is not a saved
+    /// profile selects none.
+    fn select(&mut self, name: &str, changed: &mut HashMap<String, Value<'static>>) {
+        let name = if self.profiles.contains_key(name) { name } else { "" };
+        let previous = std::mem::replace(&mut self.settings.profile, name.to_string());
+        if previous != name {
+            changed.insert("active_profile".into(), Value::from(name.to_string()));
+            if let Err(e) = self.settings.save() {
+                eprintln!("stealthd: saving the selected profile: {e}");
+            }
+        }
+        self.update_modified(changed);
+    }
+}
+
+/// `~/.config/swarm2linux`, or its place under `$XDG_CONFIG_HOME`.
+fn config_dir() -> Option<PathBuf> {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+    Some(config.join("swarm2linux"))
 }
 
 /// stealthd's own settings.
@@ -78,21 +138,19 @@ struct Shared {
 struct Settings {
     /// Warn about a low battery with a desktop notification.
     battery_notifications: bool,
+    /// The selected profile, or "".
+    profile: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { battery_notifications: true }
+        Self { battery_notifications: true, profile: String::new() }
     }
 }
 
 impl Settings {
     fn path() -> Option<PathBuf> {
-        let config = std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .filter(|p| p.is_absolute())
-            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
-        Some(config.join("swarm2linux").join("stealthd.toml"))
+        Some(config_dir()?.join("stealthd.toml"))
     }
 
     fn load() -> Self {
@@ -120,9 +178,32 @@ impl Settings {
 struct Headset {
     shared: Arc<Mutex<Shared>>,
     requests: mpsc::Sender<Request>,
+    /// One token: saving, applying and deleting profiles happen one at a time.
+    profile_token: (async_channel::Sender<()>, async_channel::Receiver<()>),
+}
+
+/// Holds the profile token; gives it back when dropped.
+struct ProfileTurn(async_channel::Sender<()>);
+
+impl Drop for ProfileTurn {
+    fn drop(&mut self) {
+        let _ = self.0.try_send(());
+    }
 }
 
 impl Headset {
+    fn new(shared: Arc<Mutex<Shared>>, requests: mpsc::Sender<Request>) -> Self {
+        let profile_token = async_channel::bounded(1);
+        let _ = profile_token.0.try_send(());
+        Self { shared, requests, profile_token }
+    }
+
+    /// Wait for the turn to change profiles.
+    async fn profile_turn(&self) -> ProfileTurn {
+        let _ = self.profile_token.1.recv().await;
+        ProfileTurn(self.profile_token.0.clone())
+    }
+
     async fn submit(&self, op: Op) -> fdo::Result<()> {
         let (reply, answer) = async_channel::bounded(1);
         self.requests.send(Request { op, reply }).map_err(|_| fdo::Error::Failed("device thread stopped".into()))?;
@@ -131,6 +212,40 @@ impl Headset {
             Ok(Err(e)) => Err(fdo::Error::Failed(e)),
             Err(_) => Err(fdo::Error::Failed("no answer from the device thread".into())),
         }
+    }
+
+    /// Read the profiles from disk again and signal what changed. A selected profile that is gone is unselected.
+    async fn reload_profiles(&self, conn: &zbus::Connection) {
+        let changed = {
+            let loaded = profiles::load();
+            let mut shared = self.shared.lock().unwrap();
+            let mut changed: HashMap<String, Value<'static>> = HashMap::new();
+            if loaded != shared.profiles {
+                shared.profiles = loaded;
+                changed.insert("profiles".into(), to_value(&shared.profile_names()));
+            }
+            if !shared.profiles.contains_key(&shared.settings.profile) {
+                shared.select("", &mut changed);
+            }
+            shared.update_modified(&mut changed);
+            changed
+        };
+        emit_changed(conn, changed).await;
+    }
+
+    /// Select a profile ("" for none) and signal it.
+    async fn select(&self, name: &str, conn: &zbus::Connection) {
+        let mut changed = HashMap::new();
+        self.shared.lock().unwrap().select(name, &mut changed);
+        emit_changed(conn, changed).await;
+    }
+}
+
+async fn emit_changed(conn: &zbus::Connection, changed: HashMap<String, Value<'static>>) {
+    if !changed.is_empty()
+        && let Err(e) = conn.emit_signal(None::<&str>, PATH, INTERFACE, "Changed", &(changed,)).await
+    {
+        eprintln!("stealthd: emitting Changed: {e}");
     }
 }
 
@@ -143,6 +258,9 @@ impl Headset {
             shared.values.iter().map(|(k, v)| (k.to_string(), to_owned_value(v))).collect();
         out.insert("connected".into(), to_owned_value(&Typed::Bool(shared.device.is_some())));
         out.insert("device".into(), to_owned_value(&Typed::Text(shared.device.clone().unwrap_or_default())));
+        out.insert("profiles".into(), to_owned_value(&shared.profile_names()));
+        out.insert("active_profile".into(), to_owned_value(&Typed::Text(shared.settings.profile.clone())));
+        out.insert("profile_modified".into(), to_owned_value(&Typed::Bool(shared.modified)));
         out
     }
 
@@ -158,8 +276,11 @@ impl Headset {
                 _ => Err(fdo::Error::InvalidArgs("sink_volume is a percentage from 0 to 100".into())),
             };
         }
-        if values::to_write(&name, &typed).is_none() {
+        let Some((key, number)) = values::to_write(&name, &typed) else {
             return Err(fdo::Error::InvalidArgs(format!("{name} cannot be set this way")));
+        };
+        if !keys::writable(key).is_some_and(|s| s.values.accepts(number)) {
+            return Err(fdo::Error::InvalidArgs(format!("{name} cannot be {number}")));
         }
         self.submit(Op::Set(name, typed)).await
     }
@@ -169,6 +290,9 @@ impl Headset {
         let eq = which_eq(&eq)?;
         if !(1..=10).contains(&band) {
             return Err(fdo::Error::InvalidArgs("band is 1 to 10".into()));
+        }
+        if !(-90..=90).contains(&tenths) {
+            return Err(fdo::Error::InvalidArgs("a band is -90 to 90 tenths of a dB".into()));
         }
         self.submit(Op::SetBand { eq, band: band as usize - 1, tenths: i64::from(tenths) }).await
     }
@@ -185,6 +309,65 @@ impl Headset {
         self.submit(Op::DeletePreset { eq, name }).await
     }
 
+    /// Save the headset's current settings as a profile, replacing one of the same name, and select it.
+    async fn save_profile(&self, name: String, #[zbus(connection)] conn: &zbus::Connection) -> fdo::Result<()> {
+        let problem = profile::name_problem(&name);
+        if name.is_empty() || !problem.is_empty() {
+            let why = if name.is_empty() { "a profile needs a name" } else { problem };
+            return Err(fdo::Error::InvalidArgs(why.into()));
+        }
+        let _turn = self.profile_turn().await;
+        let captured = {
+            let shared = self.shared.lock().unwrap();
+            if !shared.headset_available() {
+                return Err(fdo::Error::Failed("the headset is not connected".into()));
+            }
+            Profile::capture(&shared.values)
+        };
+        if captured.is_empty() {
+            return Err(fdo::Error::Failed("the headset's settings are not known yet".into()));
+        }
+        profiles::save(&name, &captured).map_err(|e| fdo::Error::Failed(format!("saving the profile: {e}")))?;
+        self.reload_profiles(conn).await;
+        self.select(&name, conn).await;
+        Ok(())
+    }
+
+    /// Select a saved profile and apply it: write the settings that differ from it. Applying the selected profile
+    /// again undoes changes made since. If a write fails, the profile stays selected and shows as modified, so
+    /// applying it again finishes the job.
+    async fn apply_profile(&self, name: String, #[zbus(connection)] conn: &zbus::Connection) -> fdo::Result<()> {
+        let _turn = self.profile_turn().await;
+        self.reload_profiles(conn).await;
+        let (found, available) = {
+            let shared = self.shared.lock().unwrap();
+            (shared.profiles.get(&name).cloned(), shared.headset_available())
+        };
+        let profile = found.ok_or_else(|| fdo::Error::InvalidArgs(format!("there is no profile called {name:?}")))?;
+        if !available {
+            return Err(fdo::Error::Failed("the headset is not connected".into()));
+        }
+        // selected first, so the values the writes bring are compared with this profile
+        self.select(&name, conn).await;
+        self.submit(Op::ApplyProfile(profile)).await
+    }
+
+    async fn delete_profile(&self, name: String, #[zbus(connection)] conn: &zbus::Connection) -> fdo::Result<()> {
+        if name.is_empty() || !profile::name_problem(&name).is_empty() {
+            return Err(fdo::Error::InvalidArgs(format!("there is no profile called {name:?}")));
+        }
+        let _turn = self.profile_turn().await;
+        let result = profiles::delete(&name);
+        self.reload_profiles(conn).await;
+        match result {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                Err(fdo::Error::InvalidArgs(format!("there is no profile called {name:?}")))
+            }
+            Err(e) => Err(fdo::Error::Failed(format!("deleting the profile: {e}"))),
+        }
+    }
+
     /// Whether a headset is connected.
     #[zbus(property)]
     async fn connected(&self) -> bool {
@@ -199,12 +382,12 @@ impl Headset {
 
     #[zbus(property)]
     async fn set_battery_notifications(&mut self, on: bool) -> fdo::Result<()> {
-        let settings = {
-            let mut shared = self.shared.lock().unwrap();
-            shared.settings.battery_notifications = on;
-            shared.settings.clone()
-        };
-        settings.save().map_err(|e| fdo::Error::Failed(format!("saving the setting: {e}")))
+        let mut shared = self.shared.lock().unwrap();
+        let mut settings = shared.settings.clone();
+        settings.battery_notifications = on;
+        settings.save().map_err(|e| fdo::Error::Failed(format!("saving the setting: {e}")))?;
+        shared.settings = settings;
+        Ok(())
     }
 }
 
@@ -217,12 +400,16 @@ fn which_eq(name: &str) -> fdo::Result<&'static EqKeys> {
 }
 
 fn main() -> Result<()> {
-    let shared = Arc::new(Mutex::new(Shared { settings: Settings::load(), ..Shared::default() }));
+    let mut shared = Shared { settings: Settings::load(), profiles: profiles::load(), ..Shared::default() };
+    if !shared.profiles.contains_key(&shared.settings.profile) {
+        shared.settings.profile.clear();
+    }
+    let shared = Arc::new(Mutex::new(shared));
     let (requests, queue) = mpsc::channel();
     let conn = zbus::blocking::connection::Builder::session()?
         .name(BUS_NAME)
         .context("is another stealthd already running?")?
-        .serve_at(PATH, Headset { shared: shared.clone(), requests })?
+        .serve_at(PATH, Headset::new(shared.clone(), requests))?
         .build()?;
     eprintln!("stealthd: serving {INTERFACE} at {PATH} as {BUS_NAME}");
 
@@ -247,7 +434,9 @@ fn main() -> Result<()> {
 
 /// The best device to use: a transmitter before the headset's own cable, then by path.
 fn pick_device() -> Option<(PathBuf, String)> {
-    let mut found: Vec<_> = discover().ok()?.into_iter().filter(|d| d.vendor_collection).collect();
+    // only products this protocol was checked on; other Turtle Beach devices may share the vendor collection
+    let mut found: Vec<_> =
+        discover().ok()?.into_iter().filter(|d| d.vendor_collection && known_product(d.pid).is_some()).collect();
     found.sort_by_key(|d| (known_product(d.pid).is_none_or(|p| p.contains("headset")), d.path.clone()));
     let d = found.into_iter().next()?;
     let label = format!("10f5:{:04x} {}", d.pid, known_product(d.pid).unwrap_or(&d.name));
@@ -289,18 +478,26 @@ impl Daemon {
         loop {
             match self.queue.recv_timeout(IDLE_POLL) {
                 Ok(req) => {
-                    let result = match req.op {
-                        Op::SinkVolume(percent) => self.set_sink_volume(percent),
-                        op => execute(&mut client, &state, op).map_err(|e| format!("{e:#}")),
+                    let (result, to_headset) = match req.op {
+                        Op::SinkVolume(percent) => (self.set_sink_volume(percent), false),
+                        op => (execute(&mut client, &state, op).map_err(|e| format!("{e:#}")), true),
                     };
-                    if result.is_ok() {
-                        // answer only once the headset has pushed the new values, so a read right after a
-                        // write sees them
-                        for doc in await_pushes(&mut client)? {
-                            state.apply(&doc);
+                    if to_headset {
+                        // answer only once the headset has pushed the new values, so a read right after a write
+                        // sees them; also after a failure, as earlier writes of the same request may have landed
+                        match await_pushes(&mut client) {
+                            Ok(docs) => {
+                                for doc in &docs {
+                                    state.apply(doc);
+                                }
+                            }
+                            Err(e) => {
+                                let _ = req.reply.send_blocking(Err("the headset disconnected".into()));
+                                return Err(e);
+                            }
                         }
-                        self.publish(Some(label.to_string()), &state, client.headset_link());
                     }
+                    self.publish(Some(label.to_string()), &state, client.headset_link());
                     let _ = req.reply.send_blocking(result);
                 }
                 Err(RecvTimeoutError::Timeout) => {}
@@ -381,6 +578,7 @@ impl Daemon {
             }
             shared.device = device;
             shared.values = new.clone();
+            shared.update_modified(&mut changed);
         }
         if changed.is_empty() {
             return;
@@ -405,10 +603,11 @@ impl Daemon {
         if self.notified_low.is_some_and(|n| n <= threshold) {
             return;
         }
-        self.notified_low = Some(threshold);
+        // checked first, so a threshold passed while they were off is still announced once they are on
         if !self.shared.lock().unwrap().settings.battery_notifications {
             return;
         }
+        self.notified_low = Some(threshold);
         notify(&self.conn, "Headset battery low", &format!("Stealth Pro II battery at {level}%"));
     }
 
@@ -465,10 +664,15 @@ fn await_pushes(client: &mut Client<HidrawDevice>) -> Result<Vec<tb_proto::Docum
     loop {
         let got = client.poll()?;
         let now = Instant::now();
+        // the overall limit holds even if the device never stops pushing
+        if now - start >= PUSH_WAIT {
+            docs.extend(got);
+            return Ok(docs);
+        }
         if !got.is_empty() {
             docs.extend(got);
             last = Some(now);
-        } else if last.is_some_and(|t| now - t >= PUSH_QUIET) || now - start >= PUSH_WAIT {
+        } else if last.is_some_and(|t| now - t >= PUSH_QUIET) {
             return Ok(docs);
         } else {
             sleep(Duration::from_millis(30));
@@ -510,21 +714,36 @@ fn execute(client: &mut Client<HidrawDevice>, state: &State, op: Op) -> Result<(
         Op::SetBand { eq, band, tenths } => client.set(eq.band(band), tenths)?,
         Op::SavePreset { eq, name } => client.save_new_preset(state, eq, &name)?,
         Op::DeletePreset { eq, name } => client.delete_named_preset(state, eq, &name)?,
+        Op::ApplyProfile(profile) => {
+            for step in profile.plan(&values::values(state)) {
+                match step {
+                    Step::Set(name, n) => {
+                        let key = values::key_of(name).context("not writable")?;
+                        client.set(key, n).with_context(|| format!("setting {name} to {n}"))?;
+                    }
+                    Step::Band(eq, band, tenths) => client.set(eq.band(band), tenths)?,
+                }
+            }
+        }
         Op::SinkVolume(_) => unreachable!("handled by the daemon"),
     }
     Ok(())
 }
 
+/// Show a desktop notification, from its own thread: a slow notification service must not hold up the device.
 fn notify(conn: &Connection, summary: &str, body: &str) {
-    let hints: HashMap<&str, Value> = HashMap::from([("urgency", Value::from(2u8))]);
-    let result = conn.call_method(
-        Some("org.freedesktop.Notifications"),
-        "/org/freedesktop/Notifications",
-        Some("org.freedesktop.Notifications"),
-        "Notify",
-        &("Stealth Pro II", 0u32, "audio-headset", summary, body, Vec::<&str>::new(), hints, -1i32),
-    );
-    if let Err(e) = result {
-        eprintln!("stealthd: notification failed: {e}");
-    }
+    let (conn, summary, body) = (conn.clone(), summary.to_string(), body.to_string());
+    std::thread::spawn(move || {
+        let hints: HashMap<&str, Value> = HashMap::from([("urgency", Value::from(2u8))]);
+        let result = conn.call_method(
+            Some("org.freedesktop.Notifications"),
+            "/org/freedesktop/Notifications",
+            Some("org.freedesktop.Notifications"),
+            "Notify",
+            &("Stealth Pro II", 0u32, "audio-headset", summary.as_str(), body.as_str(), Vec::<&str>::new(), hints, -1i32),
+        );
+        if let Err(e) = result {
+            eprintln!("stealthd: notification failed: {e}");
+        }
+    });
 }

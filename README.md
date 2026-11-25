@@ -1,12 +1,10 @@
-> [!CAUTION]
-> **This project is 100% AI-generated. It is AI slop that no human has reviewed.**
->
-> Every line of code, every script and every word of documentation in this repository, this README included, was
-> written by an AI (Anthropic's Claude). No human has read or reviewed any of it. The only human involvement was
-> trying the app out on one Stealth Pro II under Fedora and KDE Plasma and saying "seems to work". The headset
-> protocol was reverse-engineered by the same AI, so the app changes settings on your headset in ways the
-> manufacturer never documented. There is no warranty of any kind: use it at your own risk, and read the code
-> before you trust it.
+> [!NOTE]
+> **Written with AI, tested on real hardware.** The code and documentation were written by an AI (Anthropic's
+> Claude), and the headset protocol was reverse-engineered rather than taken from Turtle Beach, so the app changes
+> your headset's settings in ways the manufacturer never documented. It only sends the writes the official Swarm II
+> app was seen making, and it refuses firmware and storage commands outright. The code has been through an
+> AI-assisted security and correctness audit and has been tested on a Stealth Pro II under Fedora and Ubuntu with
+> KDE Plasma, but it has not had a line-by-line human review. It comes with no warranty (see [LICENSE](LICENSE)).
 
 # swarm2linux
 
@@ -14,11 +12,15 @@ A Linux replacement for Turtle Beach's Swarm II app, starting with the **Stealth
 
 This is an independent interoperability project and is not affiliated with Turtle Beach.
 
+This is [curxxed-mc](https://github.com/curxxed-mc)'s fork of
+[swarm2linux by tbt9czsdd4-droid](https://github.com/tbt9czsdd4-droid/swarm2linux), which wrote the original app and
+reverse-engineered the protocol. The fork adds profiles and support for the `10f5:2288` transmitter.
+
 | Settings | Equalizer |
 |---|---|
 | ![The Settings page: Superhuman Hearing, noise cancellation and the microphone](docs/screenshots/settings.png) | ![The Equalizer page: a draggable 10-band graph and the presets](docs/screenshots/equalizer.png) |
 | **Controls** | **Device** |
-| ![The Controls page: what the mode button and the assignable wheel do](docs/screenshots/controls.png) | ![The Device page: battery, firmware, power options, charging hub and startup](docs/screenshots/device.png) |
+| ![The Controls page: what the mode button and the assignable wheel do](docs/screenshots/controls.png) | ![The Device page: battery, transmitter and firmware, profiles, power options, charging hub, startup and About](docs/screenshots/device.png) |
 
 ## Installation
 
@@ -369,12 +371,12 @@ A Slint app in the style of Swarm II, with four pages:
 - **Equalizer:** game and mic EQ as a draggable 10-band graph, the onboard presets, and saving and deleting custom
   presets.
 - **Controls:** what the mode button and the assignable wheel do.
-- **Device:** battery, transmitters and firmware, auto shut-off and wake on motion, the charging hub's LEDs,
-  battery pop-ups, the tray icon and starting with the session.
+- **Device:** battery, transmitters and firmware, profiles, auto shut-off and wake on motion, the charging hub's
+  LEDs, battery pop-ups, the tray icon and starting with the session.
 
 It is a client of `stealthd` and needs it running. The tray icon shows the battery as a headset whose ear cups
 fill up, with a red badge under the headband while the mic is muted. Its menu switches noise cancellation,
-Superhuman Hearing and the game EQ preset. Closing the window keeps the app in the tray (turn the tray off on the
+Superhuman Hearing, the game EQ preset and the profile. Closing the window keeps the app in the tray (turn the tray off on the
 Device page to quit on close), and `stealth-gui --hidden` starts in the tray.
 
 Built with [Slint](https://slint.dev) under its royalty-free licence; the Device page carries the credit.
@@ -405,12 +407,37 @@ every key.
 
 On the Equalizer graph, `h` `l` choose a band and `k` `j` raise and lower it by 0.5 dB (`K` `J` by 3 dB); `=` sets it
 to 0 dB, `t` switches between the game and mic EQ, `u` undoes the changes and `s` saves them as a new preset. In the
-preset list, `Enter` chooses a preset and `dd` deletes a custom one.
+preset list, `Enter` chooses a preset and `dd` deletes a custom one. On the Device page, `Enter` on Profile lists the
+saved profiles (`Enter` applies one, `dd` deletes it), and `Enter` on Save current settings saves a new one.
 
 The mouse works too: click tabs, controls, options and presets, click or drag sliders and EQ bands, and turn the
 wheel over a slider or band. Sliders and bands are written to the headset once they have rested for 300 ms, so
 holding a key down does not flood it. The terminal needs to be at least 80×24; from 100 columns on, the cards sit
 in two columns. Colours use truecolor when `COLORTERM` says the terminal has it, otherwise 256 colours.
+
+## Profiles
+
+A profile is a named set of settings, such as "Gaming" or "Calls", that you can switch to in one go: from the
+Device page of either app, the tray menu, or `stealthctl profile apply Gaming`. It holds noise cancellation,
+Superhuman Hearing, the microphone settings (sensitivity, monitoring, noise gate, AI noise reduction), both
+equalizers, and the button and wheel functions. It leaves out the volume, auto shut-off, wake on motion and the
+charging hub's LEDs. Applying writes only the settings that differ. An equalizer is kept as its preset's name and its
+bands: if the headset still has a preset by that name it is selected, otherwise the bands are written.
+
+The profile you choose stays selected (also across restarts). When you change a setting afterwards, it is marked
+modified, in the app's header, on the Device page and in the tray: **Save** keeps the changes in the profile, and
+**Revert** puts the profile's settings back. In the terminal, `stealthctl profile save` (without a name) and
+`stealthctl profile revert` do the same.
+
+`stealthd` keeps profiles as TOML files in `~/.config/swarm2linux/profiles/`, one per profile, named after it. You
+can edit them by hand or copy them to another computer. A profile can also hold just a few settings:
+
+```toml
+# ~/.config/swarm2linux/profiles/Quiet.toml
+anc = true
+anc_level = 100
+superhuman = false
+```
 
 ## stealthd (background service)
 
@@ -428,8 +455,9 @@ it with `wpctl`. Without those two tools, the volume is shown but can't be chang
 
 D-Bus: `io.github.swarm2linux.Stealthd`, object `/io/github/swarm2linux/Headset`, interface
 `io.github.swarm2linux.Headset1` with `Values() -> a{sv}`, `Set(s, v)`, `SetBand(s, u, i)`, `SavePreset(s, s)`,
-`DeletePreset(s, s)` and the signal `Changed(a{sv})`. Value names are listed in `crates/tb-proto/src/values.rs`,
-plus `connected`, `device`, `headset_link` and `sink_volume` from the daemon.
+`DeletePreset(s, s)`, `SaveProfile(s)`, `ApplyProfile(s)`, `DeleteProfile(s)` and the signal `Changed(a{sv})`.
+Value names are listed in `crates/tb-proto/src/values.rs`, plus `connected`, `device`, `headset_link`,
+`sink_volume`, `profiles`, `active_profile` and `profile_modified` from the daemon.
 
 ```sh
 busctl --user call io.github.swarm2linux.Stealthd /io/github/swarm2linux/Headset \
@@ -457,6 +485,7 @@ stealthctl button cycle-eq        # top left button: anc | cycle-eq | noise-gate
 stealthctl wheel chat-mix         # assignable wheel: monitoring | chat-mix | bass | treble | noise-gate
 stealthctl power auto-off 20      # never | 5 | 10 | 20 | 30; power wake-on-motion on|off
 stealthctl hub led1 30            # charging hub LED brightness: led1 | led2 0-100
+stealthctl profile save Gaming    # save the current settings as a profile; list | apply NAME | revert | delete NAME
 stealthctl watch                  # print changes as they happen (buttons, wheel, battery, CrossPlay)
 stealthctl snapshot my.json       # save everything; `restore my.json` writes the settings back
 stealthctl dump                   # every record as JSON

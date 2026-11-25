@@ -53,20 +53,31 @@ pub fn set_autostart(on: bool) -> io::Result<()> {
     }
     let exe = std::env::current_exe()?;
     let exe = exe.to_str().ok_or_else(|| io::Error::other("the program's path is not UTF-8"))?;
-    // these would need escaping in Exec=
-    if exe.contains(['"', '`', '$', '\\', '\n']) {
-        return Err(io::Error::other(format!("cannot start {exe} from an autostart entry")));
-    }
+    let exec = exec_line(exe)?;
     if let Some(dir) = entry.parent() {
         fs::create_dir_all(dir)?;
     }
+    let partial = entry.with_extension("desktop.new");
     fs::write(
-        entry,
+        &partial,
         format!(
             "[Desktop Entry]\nType=Application\nName=swarm2linux\nComment=Stealth Pro II settings in the tray\n\
-             Exec=\"{exe}\" --hidden\nIcon=io.github.swarm2linux\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+             Exec={exec}\nIcon=io.github.swarm2linux\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
         ),
-    )
+    )?;
+    fs::rename(partial, entry)
+}
+
+/// The autostart entry's `Exec=` value for the program at `exe`. Linux names a program that was replaced while
+/// running "<path> (deleted)"; the entry should start the new one at the path.
+fn exec_line(exe: &str) -> io::Result<String> {
+    let exe = exe.strip_suffix(" (deleted)").unwrap_or(exe);
+    // these would need escaping inside the quotes, which not every desktop reads the same way
+    if exe.contains(['"', '`', '$', '\\']) || exe.chars().any(char::is_control) {
+        return Err(io::Error::other(format!("cannot start {exe} from an autostart entry")));
+    }
+    // % starts a field code (%f, %u, ...) even inside quotes
+    Ok(format!("\"{}\" --hidden", exe.replace('%', "%%")))
 }
 
 /// The saved preferences, or the defaults.
@@ -95,6 +106,15 @@ pub fn save(prefs: &Preferences) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exec_lines() {
+        assert_eq!(exec_line("/home/a b/.local/bin/stealth-gui").unwrap(), "\"/home/a b/.local/bin/stealth-gui\" --hidden");
+        assert_eq!(exec_line("/x/stealth-gui (deleted)").unwrap(), "\"/x/stealth-gui\" --hidden");
+        assert_eq!(exec_line("/home/100%/stealth-gui").unwrap(), "\"/home/100%%/stealth-gui\" --hidden");
+        assert!(exec_line("/home/a\"b/stealth-gui").is_err());
+        assert!(exec_line("/home/a\rb/stealth-gui").is_err());
+    }
 
     #[test]
     fn round_trips_and_fills_gaps() {

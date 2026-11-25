@@ -45,6 +45,7 @@ def main():
 
     print(f"log -> {log.f.name}")
     open_devs = {}  # path -> (RaceHid, Reassembler, label)
+    waiting_said = False
     next_scan = 0.0
     try:
         while remaining() > 0:

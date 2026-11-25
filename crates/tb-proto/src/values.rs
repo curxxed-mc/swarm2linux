@@ -153,21 +153,41 @@ fn slot_names(state: &State, eq: &EqKeys) -> Option<Vec<String>> {
         .collect()
 }
 
-/// The key and number to write for `Set(name, value)`. `None` if the name is unknown or not a single
-/// writable key (bands and presets have their own operations; read-only values have none).
-pub fn to_write(name: &str, value: &Typed) -> Option<(u16, i64)> {
-    let key = match name {
-        "hub_led_1" => keys::HUB_LED_1,
-        "hub_led_2" => keys::HUB_LED_2,
-        _ => SIMPLE.iter().find(|(n, _, _)| *n == name).map(|&(_, key, _)| key)?,
+/// The writable key behind a value name, and whether it is on/off (`true`) or a number. `None` if the name is
+/// unknown or not a single writable number (bands and presets have their own operations; read-only values and
+/// text have none).
+fn writable_key(name: &str) -> Option<(u16, bool)> {
+    let (key, kind) = match name {
+        "hub_led_1" => (keys::HUB_LED_1, Kind::Int),
+        "hub_led_2" => (keys::HUB_LED_2, Kind::Int),
+        _ => SIMPLE.iter().find(|(n, _, _)| *n == name).map(|&(_, key, kind)| (key, kind))?,
     };
     keys::writable(key)?;
-    let number = match value {
-        Typed::Bool(b) => i64::from(*b),
-        Typed::Int(n) => *n,
-        _ => return None,
-    };
-    Some((key, number))
+    match kind {
+        Kind::Bool => Some((key, true)),
+        Kind::Int => Some((key, false)),
+        Kind::Text => None,
+    }
+}
+
+/// The key and number to write for `Set(name, value)`: a boolean for an on/off value, an integer for the others.
+/// `None` if the name is not a single writable number or the value has the wrong type.
+pub fn to_write(name: &str, value: &Typed) -> Option<(u16, i64)> {
+    match (writable_key(name)?, value) {
+        ((key, true), Typed::Bool(b)) => Some((key, i64::from(*b))),
+        ((key, false), Typed::Int(n)) => Some((key, *n)),
+        _ => None,
+    }
+}
+
+/// The key behind a writable value name, whatever its type (for profiles, which keep on/off values as numbers).
+pub fn key_of(name: &str) -> Option<u16> {
+    writable_key(name).map(|(key, _)| key)
+}
+
+/// Whether a writable value name is on/off.
+pub fn is_flag(name: &str) -> bool {
+    writable_key(name).is_some_and(|(_, flag)| flag)
 }
 
 #[cfg(test)]
@@ -202,5 +222,8 @@ mod tests {
         assert_eq!(to_write("hub_led_2", &Typed::Int(10)), Some((keys::HUB_LED_2, 10)));
         assert_eq!(to_write("battery", &Typed::Int(10)), None);
         assert_eq!(to_write("name", &Typed::Text("x".into())), None);
+        assert_eq!(to_write("anc_level", &Typed::Bool(true)), None, "a number is not a boolean");
+        assert_eq!(to_write("anc", &Typed::Int(1)), None, "an on/off value takes a boolean");
+        assert_eq!(to_write("game_eq_name", &Typed::Int(1)), None);
     }
 }

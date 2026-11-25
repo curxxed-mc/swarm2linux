@@ -1,8 +1,11 @@
 [Unit]
 Description=Turtle Beach Stealth Pro II service (swarm2linux)
-Documentation=https://github.com/tbt9czsdd4-droid/swarm2linux
+Documentation=https://github.com/curxxed-mc/swarm2linux https://github.com/tbt9czsdd4-droid/swarm2linux
 PartOf=graphical-session.target
 After=graphical-session.target
+# give up after 5 failed starts in a minute instead of restarting forever
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=dbus
@@ -10,6 +13,7 @@ BusName=io.github.swarm2linux.Stealthd
 ExecStart=%h/.local/bin/stealthd
 Restart=on-failure
 RestartSec=3
+NoNewPrivileges=yes
 
 [Install]
 WantedBy=graphical-session.target

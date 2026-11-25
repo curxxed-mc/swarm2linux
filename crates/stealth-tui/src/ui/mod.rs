@@ -145,6 +145,9 @@ fn draw_status(f: &mut Frame, area: Rect, app: &App) {
 
 fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
     let mut h = match (app.daemon, app.page) {
+        (Daemon::Running, _) if matches!(app.popup, Some(Popup::Profiles { .. })) => {
+            vec![("j/k", "move"), ("Enter", "apply"), ("dd", "delete"), ("Esc", "close")]
+        }
         (Daemon::Running, Page::Settings | Page::Device) => vec![("j/k", "move"), ("h/l", "change"), ("Tab", "next card")],
         (Daemon::Running, Page::Equalizer) if app.eq.pane == 0 => {
             vec![("h/l", "band"), ("j/k", "lower/raise"), ("t", "game/mic"), ("u", "undo"), ("s", "save"), ("Tab", "presets")]
@@ -205,6 +208,59 @@ fn draw_popup(f: &mut Frame, area: Rect, app: &mut App) {
             let text = app.name_problem(tab, input.text.trim());
             f.render_widget(Paragraph::new(Span::styled(text, theme::fg(theme::BAD))), problem);
             f.render_widget(Paragraph::new(Line::from(vec![Span::styled("Enter", theme::fg(theme::ACCENT)), Span::styled(" save  ", theme::muted()), Span::styled("Esc", theme::fg(theme::ACCENT)), Span::styled(" cancel", theme::muted())])), keys);
+        }
+        Popup::Profiles { cursor } => {
+            let names = app.profiles().to_vec();
+            let active = app.values.text("active_profile").to_string();
+            let rect = centered(area, 44, names.len() as u16 + 2);
+            f.render_widget(Clear, rect);
+            let block = popup_block(" PROFILES ")
+                .title_bottom(Line::from(Span::styled(" Enter apply · dd delete ", theme::muted())).right_aligned());
+            let inner = block.inner(rect);
+            f.render_widget(block, rect);
+            let enabled = app.available();
+            for (i, name) in names.iter().enumerate() {
+                let row = Rect { y: inner.y + i as u16, height: 1, ..inner };
+                if row.y >= inner.bottom() {
+                    break;
+                }
+                app.hits.push((row, Hit::Option(i)));
+                f.render_widget(Paragraph::new(widgets::list_item(name, *name == active, i == cursor, enabled)), row);
+            }
+        }
+        Popup::ProfileName { input } => {
+            let rect = centered(area, 50, 8);
+            f.render_widget(Clear, rect);
+            let block = popup_block(" SAVE CURRENT SETTINGS AS A PROFILE ");
+            let inner = block.inner(rect).inner(Margin { horizontal: 1, vertical: 1 });
+            f.render_widget(block, rect);
+            let [label, field, problem, keys] = Layout::vertical([Constraint::Length(1); 4]).areas(inner);
+            f.render_widget(Paragraph::new(Span::styled("NAME", theme::muted())), label);
+            let field_style = Style::new().bg(rgb(theme::FIELD));
+            f.render_widget(Paragraph::new(format!(" {}", input.text)).style(field_style), field);
+            f.set_cursor_position((field.x + 1 + input.cursor as u16, field.y));
+            let name = input.text.trim();
+            let (text, style) = match tb_proto::profile::name_problem(name) {
+                "" if app.profiles().iter().any(|p| p == name) => {
+                    ("Replaces the saved profile with this name.", theme::muted())
+                }
+                problem => (problem, theme::fg(theme::BAD)),
+            };
+            f.render_widget(Paragraph::new(Span::styled(text, style)), problem);
+            f.render_widget(Paragraph::new(Line::from(vec![Span::styled("Enter", theme::fg(theme::ACCENT)), Span::styled(" save  ", theme::muted()), Span::styled("Esc", theme::fg(theme::ACCENT)), Span::styled(" cancel", theme::muted())])), keys);
+        }
+        Popup::ConfirmDeleteProfile { name } => {
+            let rect = centered(area, 50, 5);
+            f.render_widget(Clear, rect);
+            let block = popup_block(" DELETE PROFILE ");
+            let inner = block.inner(rect).inner(Margin { horizontal: 1, vertical: 0 });
+            f.render_widget(block, rect);
+            let lines = vec![
+                Line::from(format!("Delete the profile “{name}”?")),
+                Line::from(""),
+                Line::from(vec![Span::styled("y", theme::fg(theme::ACCENT)), Span::styled(" delete  ", theme::muted()), Span::styled("n", theme::fg(theme::ACCENT)), Span::styled(" keep", theme::muted())]),
+            ];
+            f.render_widget(Paragraph::new(lines), inner);
         }
         Popup::ConfirmDelete { name, .. } => {
             let rect = centered(area, 50, 5);
@@ -268,6 +324,11 @@ fn help_lines() -> Vec<Line<'static>> {
         key("j k  Enter", "move, choose"),
         key("dd  x", "delete a custom preset"),
         Line::from(""),
+        section("Profiles (Device page)"),
+        key("Enter on Profile", "the saved profiles: Enter applies, dd deletes"),
+        key("Enter on Save as new", "save the current settings as a profile"),
+        key("Save / Revert changes", "shown while the chosen profile is modified"),
+        Line::from(""),
         section("Mouse"),
         key("click", "tabs, controls, options, presets, toggles"),
         key("wheel", "change the slider or band under the pointer"),
@@ -308,7 +369,7 @@ mod tests {
                 (Page::Settings, ["MASTER VOLUME", "80%"]),
                 (Page::Equalizer, ["+9 dB", "Signature Sound"]),
                 (Page::Controls, ["MODE BUTTON", "ACTIVE NOISE CANCELLATION ON/OFF"]),
-                (Page::Device, ["BATTERY", "82%"]),
+                (Page::Device, ["BATTERY", "Gaming"]),
             ] {
                 app.page = page;
                 let s = screen(&mut app, w, h);
@@ -323,6 +384,9 @@ mod tests {
                 (Popup::Choose { control: Control::AutoShutoff, cursor: 0 }, "30 MINUTES"),
                 (Popup::SaveName { tab: EqTab::Game, input: LineInput { text: "Bassy".into(), cursor: 5 } }, "already a preset"),
                 (Popup::ConfirmDelete { tab: EqTab::Game, name: "Bassy".into() }, "Delete the preset “Bassy”?"),
+                (Popup::Profiles { cursor: 0 }, "CALLS"),
+                (Popup::ProfileName { input: LineInput { text: "Gaming".into(), cursor: 6 } }, "Replaces the saved profile"),
+                (Popup::ConfirmDeleteProfile { name: "Calls".into() }, "Delete the profile “Calls”?"),
             ] {
                 app.popup = Some(popup);
                 let s = screen(&mut app, w, h);
@@ -386,7 +450,7 @@ mod tests {
         // an option opens the popup, a click on an option chooses it
         app.page = Page::Device;
         screen(&mut app, 120, 36);
-        let shutoff = find(&app, |h| matches!(h, Hit::Control { index: 0, .. }));
+        let shutoff = find(&app, |h| matches!(h, Hit::Control { index: 2, .. }));
         click(&mut app, shutoff.x + 2, shutoff.y);
         assert!(app.popup.is_some());
         screen(&mut app, 120, 36);

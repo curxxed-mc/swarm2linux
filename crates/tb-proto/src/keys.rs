@@ -104,7 +104,9 @@ pub struct EqKeys {
 }
 
 impl EqKeys {
+    /// The key of band `n` (0–9). Panics for a band that does not exist: the next keys belong to other settings.
     pub fn band(&self, n: usize) -> u16 {
+        assert!(n < BAND_COUNT, "band {n} does not exist");
         self.bands + n as u16 * 0x10
     }
 }

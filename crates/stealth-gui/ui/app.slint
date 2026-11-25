@@ -55,6 +55,16 @@ export component Tray inherits SystemTrayIcon {
                 Headset.set-bool("superhuman", Headset.superhuman);
             }
         }
+        if Headset.profiles.length > 0: Menu {
+            title: "Profile: " + (Headset.active-profile != "" ? Headset.active-profile + (Headset.profile-modified ? " (modified)" : "") : "none");
+            for name in Headset.profiles: MenuItem {
+                title: name == Headset.active-profile && Headset.profile-modified ? name + ": revert changes" : name;
+                enabled: Headset.available;
+                activated => {
+                    Headset.apply-profile(name);
+                }
+            }
+        }
         Menu {
             title: "Game EQ: " + (Headset.game-eq-name != "" ? Headset.game-eq-name : "custom");
             for choice in root.presets: MenuItem {

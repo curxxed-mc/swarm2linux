@@ -173,6 +173,28 @@ fn draw_control(f: &mut Frame, rect: Rect, control: Control, app: &mut App, focu
             let label = control.options().into_iter().find(|(v, _)| Some(*v) == current).map(|(_, l)| l).unwrap_or_else(|| "–".into());
             widgets::choice(&label, focused, enabled)
         }
+        Kind::Profile => {
+            let active = app.values.text("active_profile");
+            let label = if !active.is_empty() {
+                let modified = if app.values.flag("profile_modified") { " · modified" } else { "" };
+                format!("{active}{modified}")
+            } else if app.profiles().is_empty() {
+                "none saved".into()
+            } else {
+                "none chosen".into()
+            };
+            widgets::choice(&label, focused, enabled)
+        }
+        Kind::Button => {
+            let style = if !enabled {
+                theme::dim()
+            } else if focused {
+                theme::fg(theme::ACCENT)
+            } else {
+                theme::muted()
+            };
+            vec![Span::styled("Enter ↵", style)]
+        }
     };
     f.render_widget(Paragraph::new(Line::from(right)).alignment(Alignment::Right).style(Style::new().remove_modifier(Modifier::BOLD)), top);
     app.hits.push((rect, Hit::Control { index, track }));

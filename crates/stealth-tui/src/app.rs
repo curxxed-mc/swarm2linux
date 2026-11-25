@@ -104,6 +104,10 @@ pub enum Popup {
     Choose { control: Control, cursor: usize },
     SaveName { tab: EqTab, input: LineInput },
     ConfirmDelete { tab: EqTab, name: String },
+    /// the saved profiles: Enter applies one, dd deletes it
+    Profiles { cursor: usize },
+    ProfileName { input: LineInput },
+    ConfirmDeleteProfile { name: String },
 }
 
 /// Something the mouse can hit, recorded while drawing.
@@ -366,8 +370,10 @@ impl App {
 
     // ---- Settings and Device ----
 
+    /// The focused control; the last one if the list got shorter (the profile's Save and Revert come and go).
     pub fn focused(&self) -> Option<Control> {
-        pages::focus_list(self.page, self).get(self.focus[self.page.index()]).copied()
+        let list = pages::focus_list(self.page, self);
+        list.get(self.focus[self.page.index()].min(list.len().saturating_sub(1))).copied()
     }
 
     fn list_action(&mut self, action: Action, now: Instant) {
@@ -417,6 +423,7 @@ impl App {
     pub fn enabled(&self, control: Control) -> bool {
         match control {
             Control::BatteryPopups => self.daemon == Daemon::Running && self.battery_notifications.is_some(),
+            Control::Profile => self.daemon == Daemon::Running && !self.profiles().is_empty(),
             Control::SuperhumanMode | Control::SuperhumanLevel => self.available() && self.values.flag("superhuman"),
             Control::Volume => self.available() && !control.read_only(&self.values),
             _ => self.available(),
@@ -500,7 +507,36 @@ impl App {
                     self.write(Command::Set(name.into(), Typed::Int(value)));
                 }
             }
+            Kind::Profile if change == Change::Activate => {
+                let active = self.values.text("active_profile");
+                let cursor = self.profiles().iter().position(|p| p == active).unwrap_or(0);
+                self.popup = Some(Popup::Profiles { cursor });
+            }
+            Kind::Button if change == Change::Activate => {
+                let selected = self.values.text("active_profile").to_string();
+                match control {
+                    Control::UpdateProfile => self.write(Command::SaveProfile(selected)),
+                    Control::RevertProfile => self.write(Command::ApplyProfile(selected)),
+                    _ => self.popup = Some(Popup::ProfileName { input: LineInput::default() }),
+                }
+            }
+            Kind::Profile | Kind::Button => {}
         }
+    }
+
+    // ---- profiles ----
+
+    /// The saved profiles' names.
+    pub fn profiles(&self) -> &[String] {
+        self.values.texts("profiles")
+    }
+
+    pub fn apply_profile(&mut self, index: usize, now: Instant) {
+        let Some(name) = self.profiles().get(index).cloned() else { return };
+        if !self.available() {
+            return self.toast("The headset is not connected.", true, now);
+        }
+        self.write(Command::ApplyProfile(name));
     }
 
     // ---- Equalizer ----
@@ -750,6 +786,49 @@ impl App {
                 _ if close || plain('n') => None,
                 _ => Some(Popup::ConfirmDelete { tab, name }),
             },
+            Popup::Profiles { cursor } => {
+                let last = self.profiles().len().saturating_sub(1);
+                match key.code {
+                    KeyCode::Char('j') | KeyCode::Down => Some(Popup::Profiles { cursor: (cursor + 1).min(last) }),
+                    KeyCode::Char('k') | KeyCode::Up => Some(Popup::Profiles { cursor: cursor.saturating_sub(1) }),
+                    KeyCode::Char('g') | KeyCode::Home => Some(Popup::Profiles { cursor: 0 }),
+                    KeyCode::Char('G') | KeyCode::End => Some(Popup::Profiles { cursor: last }),
+                    KeyCode::Enter | KeyCode::Char(' ' | 'l') | KeyCode::Right => {
+                        self.apply_profile(cursor, now);
+                        None
+                    }
+                    KeyCode::Char('d' | 'x') | KeyCode::Delete => match self.profiles().get(cursor) {
+                        Some(name) => Some(Popup::ConfirmDeleteProfile { name: name.clone() }),
+                        None => Some(Popup::Profiles { cursor }),
+                    },
+                    _ if close || plain('h') || key.code == KeyCode::Left => None,
+                    _ => Some(Popup::Profiles { cursor }),
+                }
+            }
+            Popup::ProfileName { mut input } => match key.code {
+                KeyCode::Esc => None,
+                KeyCode::Enter => {
+                    let name = input.text.trim().to_string();
+                    if name.is_empty() || !tb_proto::profile::name_problem(&name).is_empty() {
+                        Some(Popup::ProfileName { input })
+                    } else {
+                        self.write(Command::SaveProfile(name));
+                        None
+                    }
+                }
+                _ => {
+                    input.key(key);
+                    Some(Popup::ProfileName { input })
+                }
+            },
+            Popup::ConfirmDeleteProfile { name } => match key.code {
+                KeyCode::Char('y' | 'Y') | KeyCode::Enter => {
+                    self.write(Command::DeleteProfile(name));
+                    None
+                }
+                _ if close || plain('n') => None,
+                _ => Some(Popup::ConfirmDeleteProfile { name }),
+            },
         };
     }
 
@@ -785,6 +864,13 @@ impl App {
                 let control = *control;
                 if let Some((_, Hit::Option(i))) = hit {
                     self.change(control, Change::To(i as i64), now);
+                }
+                self.popup = None;
+                return;
+            }
+            Some(Popup::Profiles { .. }) => {
+                if let Some((_, Hit::Option(i))) = hit {
+                    self.apply_profile(i, now);
                 }
                 self.popup = None;
                 return;
@@ -856,6 +942,11 @@ impl App {
             self.popup = Some(Popup::Choose { control, cursor: (cursor as i64 - step).clamp(0, last) as usize });
             return;
         }
+        if let Some(Popup::Profiles { cursor }) = self.popup {
+            let last = self.profiles().len().saturating_sub(1) as i64;
+            self.popup = Some(Popup::Profiles { cursor: (cursor as i64 - step).clamp(0, last) as usize });
+            return;
+        }
         if self.popup.is_some() || self.daemon != Daemon::Running {
             return;
         }
@@ -918,6 +1009,8 @@ pub(crate) mod tests {
         put("mic_eq_preset", Typed::Int(1));
         put("mic_eq_bands", Typed::Ints(vec![0; 10]));
         put("transmitters", Typed::Texts(vec!["1 2287 active".into()]));
+        put("profiles", Typed::Texts(vec!["Calls".into(), "Gaming".into()]));
+        put("active_profile", Typed::Text("Gaming".into()));
         let mut app = App::new();
         app.daemon_event(Event::Snapshot(Some(v), Some(true)), Instant::now());
         app
@@ -1038,7 +1131,7 @@ pub(crate) mod tests {
         assert!(app.take_commands(t + DEBOUNCE).is_empty());
         assert!(app.popup.is_none());
         // stealthd's own setting still works
-        press(&mut app, "4gtgg\t\th", t);
+        press(&mut app, "4gtgg\t\t\th", t);
         assert_eq!((app.page, app.focused()), (Page::Device, Some(Control::BatteryPopups)));
         assert_eq!(app.take_commands(t), [Command::BatteryNotifications(false)]);
     }
@@ -1107,5 +1200,58 @@ pub(crate) mod tests {
         press(&mut app, ":nope\n", Instant::now());
         assert!(!app.quit);
         assert!(app.toast.as_ref().is_some_and(|t| t.error));
+    }
+
+    #[test]
+    fn profiles_apply_save_and_delete() {
+        let now = Instant::now();
+        let mut app = connected();
+        app.page = Page::Device;
+        assert_eq!(app.focused(), Some(Control::Profile), "the profiles card comes first on the Device page");
+
+        // the list opens at the active profile; k moves to "Calls", Enter applies it
+        press(&mut app, "\n", now);
+        assert_eq!(app.popup, Some(Popup::Profiles { cursor: 1 }));
+        press(&mut app, "k\n", now);
+        assert_eq!(app.popup, None);
+        assert_eq!(app.take_commands(now), [Command::ApplyProfile("Calls".into())]);
+
+        // dd in the list asks first
+        press(&mut app, "\ndd", now);
+        assert_eq!(app.popup, Some(Popup::ConfirmDeleteProfile { name: "Gaming".into() }));
+        press(&mut app, "y", now);
+        assert_eq!(app.take_commands(now), [Command::DeleteProfile("Gaming".into())]);
+
+        // Save asks for a name and refuses a bad one
+        press(&mut app, "j\n.x\n", now);
+        assert!(matches!(app.popup, Some(Popup::ProfileName { .. })), "a name starting with a dot is refused");
+        app.popup = Some(Popup::ProfileName { input: LineInput::default() });
+        press(&mut app, "Music\n", now);
+        assert_eq!(app.popup, None);
+        assert_eq!(app.take_commands(now), [Command::SaveProfile("Music".into())]);
+
+        // without the headset, applying only says why
+        app.values.set("headset_link", Typed::Bool(false));
+        app.focus[Page::Device.index()] = 0;
+        press(&mut app, "\n\n", now);
+        assert_eq!(app.take_commands(now), []);
+        assert!(app.toast.as_ref().is_some_and(|t| t.error));
+    }
+
+    #[test]
+    fn a_modified_profile_offers_save_and_revert() {
+        let now = Instant::now();
+        let mut app = connected();
+        app.page = Page::Device;
+        let list = pages::focus_list(Page::Device, &app);
+        assert!(!list.contains(&Control::RevertProfile), "nothing to revert while the profile matches");
+
+        app.daemon_event(Event::Changed(BTreeMap::from([("profile_modified".into(), Typed::Bool(true))])), now);
+        let list = pages::focus_list(Page::Device, &app);
+        assert_eq!(list[..4], [Control::Profile, Control::UpdateProfile, Control::RevertProfile, Control::SaveProfile]);
+        press(&mut app, "j\n", now);
+        assert_eq!(app.take_commands(now), [Command::SaveProfile("Gaming".into())]);
+        press(&mut app, "j\n", now);
+        assert_eq!(app.take_commands(now), [Command::ApplyProfile("Gaming".into())]);
     }
 }

@@ -1,9 +1,9 @@
 // Swarm's device cards: status, power options, charging hub and notifications, plus an About card.
 
-import { AboutSlint } from "std-widgets.slint";
+import { AboutSlint, LineEdit } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { Headset, Prefs, About } from "../state.slint";
-import { Card, Label, Hint, Toggle, GradientSlider, Dropdown, InfoRow } from "../widgets/controls.slint";
+import { Card, Label, Hint, Toggle, GradientSlider, Dropdown, InfoRow, OutlineButton, SavedItem } from "../widgets/controls.slint";
 
 // A setting name with its control on the right.
 component Setting inherits HorizontalLayout {
@@ -114,6 +114,133 @@ component PowerCard inherits Card {
     }
 }
 
+// Saved sets of settings: choose one to apply it, or save the current settings as a new one. The chosen profile
+// stays selected; changes made afterwards mark it modified, with Save and Revert.
+component ProfilesCard inherits Card {
+    private property <bool> naming;
+    private property <string> new-name;
+    private property <string> name-problem: Headset.profile-name-problem(root.new-name);
+    private property <bool> replaces: Headset.profile-exists(root.new-name);
+
+    function save() {
+        if (root.new-name != "" && root.name-problem == "") {
+            Headset.save-profile(root.new-name);
+            root.naming = false;
+            root.new-name = "";
+        }
+    }
+
+    title: "Profiles";
+
+    VerticalLayout {
+        spacing: 2px;
+        for name in Headset.profiles: SavedItem {
+            name: name;
+            current: name == Headset.active-profile;
+            enabled: Headset.available;
+            selected => {
+                Headset.apply-profile(name);
+            }
+            deleted => {
+                Headset.delete-profile(name);
+            }
+        }
+        if Headset.profiles.length == 0: Hint {
+            text: "None yet. Set the headset up for an activity, then save it as a profile.";
+        }
+    }
+
+    if Headset.active-profile != "" && Headset.profile-modified: HorizontalLayout {
+        spacing: 12px;
+        Rectangle {
+            width: 8px;
+            height: 8px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 4px;
+            background: Theme.warn;
+        }
+        Text {
+            text: "Changed since " + Headset.active-profile + " was applied";
+            color: Theme.text;
+            font-size: Theme.label-size;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        OutlineButton {
+            text: "Revert";
+            enabled: Headset.available;
+            clicked => {
+                Headset.apply-profile(Headset.active-profile);
+            }
+        }
+        OutlineButton {
+            text: "Save";
+            primary: true;
+            enabled: Headset.available;
+            clicked => {
+                Headset.save-profile(Headset.active-profile);
+            }
+        }
+    }
+
+    if !root.naming: HorizontalLayout {
+        alignment: end;
+        OutlineButton {
+            text: "Save current settings";
+            enabled: Headset.available;
+            clicked => {
+                root.naming = true;
+            }
+        }
+    }
+
+    if root.naming: VerticalLayout {
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 12px;
+            LineEdit {
+                horizontal-stretch: 1;
+                placeholder-text: "Profile name";
+                text <=> root.new-name;
+                accepted => {
+                    root.save();
+                }
+                init => {
+                    self.focus();
+                }
+            }
+            OutlineButton {
+                text: "Cancel";
+                clicked => {
+                    root.naming = false;
+                    root.new-name = "";
+                }
+            }
+            OutlineButton {
+                text: root.replaces ? "Replace" : "Save";
+                primary: true;
+                enabled: Headset.available && root.new-name != "" && root.name-problem == "";
+                clicked => {
+                    root.save();
+                }
+            }
+        }
+        if root.name-problem != "": Text {
+            text: root.name-problem;
+            color: Theme.bad;
+            font-size: Theme.small-size;
+        }
+        if root.name-problem == "" && root.replaces: Hint {
+            text: "Replaces the saved profile with this name.";
+        }
+    }
+
+    Hint {
+        text: "A profile holds noise cancellation, Superhuman Hearing, the microphone settings, both equalizers (their presets and bands), and the button and wheel functions. Changes you make after choosing one show here until you save or revert them.";
+    }
+}
+
 component HubCard inherits Card {
     title: "Charging hub";
 
@@ -221,17 +348,34 @@ component NotificationsCard inherits Card {
 component AboutCard inherits Card {
     title: "About";
 
-    Text {
-        text: "swarm2linux " + About.version;
-        color: Theme.text;
-        font-size: Theme.label-size;
-    }
-    Hint {
-        text: "An unofficial Linux app for the Turtle Beach Stealth Pro II, not affiliated with Turtle Beach. github.com/tbt9czsdd4-droid/swarm2linux";
-    }
     HorizontalLayout {
-        alignment: start;
-        AboutSlint { }
+        spacing: 24px;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 10px;
+            alignment: start;
+            Text {
+                text: "swarm2linux " + About.version;
+                color: Theme.text;
+                font-size: Theme.label-size;
+            }
+            Hint {
+                text: "An unofficial Linux app for the Turtle Beach Stealth Pro II, not affiliated with Turtle Beach.";
+            }
+            Hint {
+                text: "This fork is maintained by curxxed-mc: github.com/curxxed-mc/swarm2linux";
+            }
+            Hint {
+                text: "Based on swarm2linux by tbt9czsdd4-droid: github.com/tbt9czsdd4-droid/swarm2linux";
+            }
+        }
+        // Slint's credit, which its royalty-free licence asks for in the About screen
+        VerticalLayout {
+            alignment: start;
+            AboutSlint {
+                width: 150px;
+            }
+        }
     }
 }
 
@@ -244,6 +388,7 @@ export component DevicePage inherits HorizontalLayout {
         spacing: 24px;
         alignment: start;
         StatusCard { }
+        ProfilesCard { }
         PowerCard { }
     }
     VerticalLayout {

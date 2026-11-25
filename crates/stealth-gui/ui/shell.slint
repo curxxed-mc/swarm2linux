@@ -169,6 +169,32 @@ export component Header {
             spacing: 22px;
             alignment: end;
             padding-bottom: 20px;
+            if Headset.active-profile != "": HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "PROFILE";
+                    color: Theme.muted;
+                    font-size: Theme.small-size;
+                    letter-spacing: 1px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: Headset.active-profile;
+                    color: Theme.text;
+                    font-size: Theme.label-size;
+                    vertical-alignment: center;
+                }
+                if Headset.profile-modified: Text {
+                    text: "· modified";
+                    color: Theme.warn;
+                    font-size: Theme.label-size;
+                    vertical-alignment: center;
+                }
+            }
+            if Headset.active-profile != "": Rectangle {
+                width: 1px;
+                background: Theme.line;
+            }
             if Headset.available || Headset.battery >= 0: Battery { }
             Rectangle {
                 width: 1px;

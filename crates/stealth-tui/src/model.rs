@@ -78,6 +78,11 @@ pub enum Control {
     HubLed1,
     HubLed2,
     BatteryPopups,
+    Profile,
+    SaveProfile,
+    /// shown while the selected profile is modified
+    UpdateProfile,
+    RevertProfile,
 }
 
 /// What kind of control it is, and the value it shows.
@@ -88,6 +93,10 @@ pub enum Kind {
     Choice(&'static str),
     /// Off | On
     Segmented(&'static str),
+    /// the active profile; Enter opens the list
+    Profile,
+    /// an action on Enter
+    Button,
 }
 
 impl Control {
@@ -109,6 +118,10 @@ impl Control {
             Control::HubLed1 => "LED 1",
             Control::HubLed2 => "LED 2",
             Control::BatteryPopups => "Battery pop-ups",
+            Control::Profile => "Profile",
+            Control::SaveProfile => "Save as new profile",
+            Control::UpdateProfile => "Save changes",
+            Control::RevertProfile => "Revert changes",
         }
     }
 
@@ -134,6 +147,8 @@ impl Control {
             Control::HubLed2 => slider("hub_led_2"),
             // stealthd's own setting, not a headset value
             Control::BatteryPopups => Kind::Toggle("battery_notifications"),
+            Control::Profile => Kind::Profile,
+            Control::SaveProfile | Control::UpdateProfile | Control::RevertProfile => Kind::Button,
         }
     }
 
