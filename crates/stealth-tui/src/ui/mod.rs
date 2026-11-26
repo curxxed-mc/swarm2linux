@@ -150,7 +150,7 @@ fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
         }
         (Daemon::Running, Page::Settings | Page::Device) => vec![("j/k", "move"), ("h/l", "change"), ("Tab", "next card")],
         (Daemon::Running, Page::Equalizer) if app.eq.pane == 0 => {
-            vec![("h/l", "band"), ("j/k", "lower/raise"), ("t", "game/mic"), ("u", "undo"), ("s", "save"), ("Tab", "presets")]
+            vec![("h/l", "band"), ("j/k", "lower/raise"), ("t", "game/mic"), ("u", "undo"), ("w", "update"), ("s", "save"), ("Tab", "presets")]
         }
         (Daemon::Running, Page::Equalizer) => vec![("j/k", "move"), ("Enter", "choose"), ("dd", "delete"), ("Tab", "graph")],
         (Daemon::Running, Page::Controls) => vec![("j/k", "move"), ("Enter", "choose"), ("Tab", "switch list")],
@@ -318,6 +318,7 @@ fn help_lines() -> Vec<Line<'static>> {
         key("=", "set the band to 0 dB"),
         key("t", "switch between the game and mic EQ"),
         key("u", "undo the changes (back to the preset)"),
+        key("w", "update the custom preset being edited"),
         key("s", "save as a new preset"),
         Line::from(""),
         section("Equalizer presets"),

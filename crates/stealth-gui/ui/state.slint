@@ -58,6 +58,9 @@ export global Headset {
     // bands changed in this app since a preset was last chosen; Cancel puts back what was there before
     in-out property <bool> game-eq-edited;
     in-out property <bool> mic-eq-edited;
+    // the preset number the edit started from (16-20 for a custom preset, which Update can then overwrite)
+    in-out property <int> game-eq-edit-from;
+    in-out property <int> mic-eq-edit-from;
 
     // option lists, filled from tb_proto::keys
     in property <[Choice]> superhuman-modes;
@@ -88,6 +91,8 @@ export global Headset {
     callback set-int(name: string, value: int);
     callback set-band(eq: string, band: int, tenths: int);
     callback save-preset(eq: string, name: string);
+    // replace a saved custom preset's bands with the current bands
+    callback update-preset(eq: string, name: string);
     callback delete-preset(eq: string, name: string);
     callback set-battery-notifications(on: bool);
     callback save-profile(name: string);

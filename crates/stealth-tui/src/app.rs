@@ -568,6 +568,7 @@ impl App {
             }
             Action::Key('u') => self.undo(tab, now),
             Action::Key('s') => self.start_save(tab, now),
+            Action::Key('w') => self.update_preset(tab, now),
             _ if self.eq.pane == 0 => self.graph_action(action, now),
             _ => self.preset_action(action, now),
         }
@@ -677,6 +678,37 @@ impl App {
             return self.toast("All five custom presets are in use.", true, now);
         }
         self.popup = Some(Popup::SaveName { tab, input: LineInput::default() });
+    }
+
+    /// The saved custom preset the current edit started from, which `w` overwrites.
+    pub fn editing_preset(&self, tab: EqTab) -> Option<String> {
+        let edit = self.edits.get(&tab)?;
+        let slot = usize::try_from(i64::from(edit.preset) - keys::FIRST_CUSTOM_PRESET).ok()?;
+        self.values.texts(&format!("{}_eq_slots", tab.name())).get(slot).filter(|n| !n.is_empty()).cloned()
+    }
+
+    /// Overwrite the custom preset being edited with the current bands.
+    pub fn update_preset(&mut self, tab: EqTab, now: Instant) {
+        if !self.available() {
+            return;
+        }
+        let Some(name) = self.editing_preset(tab) else {
+            return self.toast("Choose a custom preset and change its bands first", false, now);
+        };
+        // band writes still waiting go out first, so the preset gets them
+        let mut bands: Vec<Pending> = Vec::new();
+        self.pending.retain(|p| {
+            let band = matches!(p.key, PendingKey::Band(t, _) if t == tab);
+            if band {
+                bands.push(p.clone());
+            }
+            !band
+        });
+        bands.sort_by_key(|p| p.due);
+        for p in bands {
+            self.write(p.command);
+        }
+        self.write(Command::UpdatePreset(tab.name().into(), name));
     }
 
     /// Why the name being typed can't be saved, or "".
@@ -914,6 +946,7 @@ impl App {
                 self.choose_preset(self.eq.tab, i, now);
             }
             Hit::EqButton('u') => self.undo(self.eq.tab, now),
+            Hit::EqButton('w') => self.update_preset(self.eq.tab, now),
             Hit::EqButton(_) => self.start_save(self.eq.tab, now),
             Hit::Earcup(k) => {
                 self.controls.control = k;
@@ -1177,6 +1210,27 @@ pub(crate) mod tests {
         press(&mut app, "Treble\n", t);
         assert_eq!(app.take_commands(t), [Command::SavePreset("game".into(), "Treble".into())]);
         assert!(app.popup.is_none());
+    }
+
+    #[test]
+    fn eq_update_overwrites_the_custom_preset_being_edited() {
+        let mut app = connected();
+        let t = Instant::now();
+        press(&mut app, "gtlk", t);
+        assert_eq!(app.editing_preset(EqTab::Game), None, "the edit started from an onboard preset");
+        press(&mut app, "w", t);
+        assert_eq!(app.take_commands(t + DEBOUNCE), [Command::SetBand("game".into(), 2, 5)], "nothing to update");
+        press(&mut app, "\tG\n", t);
+        assert_eq!(app.take_commands(t), [set("game_eq_preset", Typed::Int(16))]);
+        app.daemon_event(Event::Changed(BTreeMap::from([("game_eq_preset".into(), Typed::Int(16))])), t);
+        press(&mut app, "\tK", t);
+        assert_eq!(app.editing_preset(EqTab::Game).as_deref(), Some("Bassy"));
+        // the waiting band write goes out before the update, so the preset gets it
+        press(&mut app, "w", t);
+        assert_eq!(
+            app.take_commands(t),
+            [Command::SetBand("game".into(), 2, 35), Command::UpdatePreset("game".into(), "Bassy".into())]
+        );
     }
 
     #[test]

@@ -277,6 +277,8 @@ Derived the same way, from pushes in the order 1 → 2 → 3 → 4 (seen twice, 
 - **Delete**: write the preset's name to `1610` (game) or `1630` (mic). The device empties the slot and lowers the
   count **[capture, seen]**.
 - Select a saved preset like a built-in one: `1210 = 16`…`20`.
+- **Edit**: there is no write for it, and Swarm II offers none. swarm2linux updates a preset by deleting it and saving
+  the current bands under the same name; the device puts it in the first free slot, which can be an earlier one.
 
 ## 5. Open questions
 

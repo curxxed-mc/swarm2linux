@@ -133,6 +133,8 @@ enum EqCmd {
     },
     /// Save the current bands as a custom preset (up to 5, names up to 16 characters)
     Save { name: String },
+    /// Replace a saved custom preset's bands with the current bands, keeping its name
+    Update { name: String },
     /// Delete a custom preset
     Delete { name: String },
 }
@@ -321,6 +323,17 @@ impl Backend {
             Backend::Direct(client) => {
                 let state = read_eq(client, eq)?;
                 client.save_new_preset(&state, eq, name)?;
+                show_updates(client)
+            }
+        }
+    }
+
+    fn update_preset(&mut self, eq: &EqKeys, name: &str) -> Result<()> {
+        match self {
+            Backend::Daemon(d) => Ok(d.update_preset(eq_name(eq), name)?),
+            Backend::Direct(client) => {
+                let state = read_eq(client, eq)?;
+                client.update_named_preset(&state, eq, name)?;
                 show_updates(client)
             }
         }
@@ -717,6 +730,7 @@ fn equalizer(b: &mut Backend, eq: &EqKeys, cmd: EqCmd) -> Result<()> {
             b.set_band(eq, band, ((db * 10.0) / 5.0).round() as i64 * 5)
         }
         EqCmd::Save { name } => b.save_preset(eq, &name),
+        EqCmd::Update { name } => b.update_preset(eq, &name),
         EqCmd::Delete { name } => b.delete_preset(eq, &name),
     }
 }

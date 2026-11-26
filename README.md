@@ -466,7 +466,7 @@ it with `wpctl`. Without those two tools, the volume is shown but can't be chang
 
 D-Bus: `io.github.swarm2linux.Stealthd`, object `/io/github/swarm2linux/Headset`, interface
 `io.github.swarm2linux.Headset1` with `Values() -> a{sv}`, `Set(s, v)`, `SetBand(s, u, i)`, `SavePreset(s, s)`,
-`DeletePreset(s, s)`, `SaveProfile(s)`, `ApplyProfile(s)`, `DeleteProfile(s)` and the signal `Changed(a{sv})`.
+`UpdatePreset(s, s)`, `DeletePreset(s, s)`, `SaveProfile(s)`, `ApplyProfile(s)`, `DeleteProfile(s)` and the signal `Changed(a{sv})`.
 Value names are listed in `crates/tb-proto/src/values.rs`, plus `connected`, `device`, `headset_link`,
 `sink_volume`, `profiles`, `active_profile` and `profile_modified` from the daemon.
 
@@ -488,7 +488,8 @@ stealthctl eq list                # game EQ: bands with frequencies, built-in an
 stealthctl eq preset bass         # signature | bass | bass-treble | vocal | <custom preset name>
 stealthctl eq band 1 -3.5         # dB in steps of 0.5
 stealthctl eq save MyPreset       # save the current bands as a custom preset (5 slots); eq delete MyPreset
-stealthctl mic-eq preset clarity  # signature | full | clarity | smooth; band/save/delete as for eq
+stealthctl eq update MyPreset     # replace a custom preset's bands with the current bands
+stealthctl mic-eq preset clarity  # signature | full | clarity | smooth; band/save/update/delete as for eq
 stealthctl shh on                 # Superhuman Hearing; off, mode legacy|footsteps|gunshots, level 0-100
 stealthctl anc on                 # off, level 0-100 (0 = ambient, 100 = full noise cancellation)
 stealthctl monitor level 60       # how loud you hear your own voice

@@ -175,6 +175,8 @@ fn connect_writes(h: &Headset<'_>, bridge: &Link) {
     let b = bridge.clone();
     h.on_save_preset(move |eq, name| b.send(Command::SavePreset(eq.into(), name.into())));
     let b = bridge.clone();
+    h.on_update_preset(move |eq, name| b.send(Command::UpdatePreset(eq.into(), name.into())));
+    let b = bridge.clone();
     h.on_delete_preset(move |eq, name| b.send(Command::DeletePreset(eq.into(), name.into())));
     let b = bridge.clone();
     h.on_set_battery_notifications(move |on| b.send(Command::BatteryNotifications(on)));

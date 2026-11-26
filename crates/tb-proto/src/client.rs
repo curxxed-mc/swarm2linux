@@ -165,6 +165,42 @@ impl<T: ReportIo> Client<T> {
         self.save_preset(eq, slot, &bands, name)
     }
 
+    /// Replace the bands of the custom preset called `name` (case-insensitive) with the current bands, keeping its
+    /// name. The headset has no write that edits a preset, so this deletes it and saves it again (Swarm II offers no
+    /// edit either). The device stores a saved preset in its first free slot, so the preset can move to an earlier
+    /// slot and preset number. If the save fails after the delete, the bands are still on the headset as unsaved
+    /// custom bands, so saving them as a new preset recovers.
+    pub fn update_named_preset(&mut self, state: &State, eq: &keys::EqKeys, name: &str) -> Result<()> {
+        let preset = state
+            .custom_presets(eq)
+            .into_iter()
+            .find(|p| p.name.eq_ignore_ascii_case(name))
+            .ok_or_else(|| Error::Preset(format!("no custom {} preset called {name:?}", eq.what)))?;
+        let mut bands = [0i64; keys::BAND_COUNT];
+        for (i, b) in state.equalizer(eq).bands.iter().enumerate() {
+            bands[i] = b.ok_or_else(|| Error::Preset(format!("the current {} bands are not known", eq.what)))?;
+        }
+        self.delete_preset(eq, &preset.name)?;
+        // the freed slot is free now even if `state` has not seen the push yet; take the first free one, as the
+        // device will
+        let slot = eq
+            .slots
+            .iter()
+            .enumerate()
+            .find_map(|(i, key)| {
+                let number = keys::FIRST_CUSTOM_PRESET + i as i64;
+                let free = number == preset.number
+                    || state.raw(*key).and_then(|v| v.get("name")?.as_str().map(str::is_empty)).unwrap_or(false);
+                free.then_some(number)
+            })
+            .unwrap_or(preset.number);
+        self.save_preset(eq, slot, &bands, &preset.name).map_err(|e| {
+            Error::Preset(format!(
+                "{name:?} was deleted but saving it again failed ({e}); the bands are still on the headset, save them as a new preset"
+            ))
+        })
+    }
+
     /// Delete the custom preset called `name` (case-insensitive), as known in `state`.
     pub fn delete_named_preset(&mut self, state: &State, eq: &keys::EqKeys, name: &str) -> Result<()> {
         let preset = state

@@ -7,7 +7,8 @@
 //! - `Values() -> a{sv}`: every known value by name (see `tb_proto::values`), plus `connected` and `device`
 //! - `Set(s name, v value)`: set a boolean or integer value, e.g. `("anc", true)` or `("sink_volume", 50)`
 //! - `SetBand(s eq, u band, i tenths)`: one band (1–10) of the `"game"` or `"mic"` equalizer, in tenths of a dB
-//! - `SavePreset(s eq, s name)`, `DeletePreset(s eq, s name)`: custom EQ presets
+//! - `SavePreset(s eq, s name)`, `UpdatePreset(s eq, s name)`, `DeletePreset(s eq, s name)`: custom EQ presets;
+//!   `UpdatePreset` replaces a saved preset's bands with the current ones
 //! - `SaveProfile(s name)`, `ApplyProfile(s name)`, `DeleteProfile(s name)`: profiles (see `tb_proto::profile`)
 //! - signal `Changed(a{sv})`: the values that changed
 //! - property `Connected` (b)
@@ -144,6 +145,11 @@ impl DaemonClient {
 
     pub fn save_preset(&self, eq: &str, name: &str) -> zbus::Result<()> {
         self.proxy.call::<_, _, ()>("SavePreset", &(eq, name))
+    }
+
+    /// Replace the bands of a saved custom preset with the current bands.
+    pub fn update_preset(&self, eq: &str, name: &str) -> zbus::Result<()> {
+        self.proxy.call::<_, _, ()>("UpdatePreset", &(eq, name))
     }
 
     pub fn delete_preset(&self, eq: &str, name: &str) -> zbus::Result<()> {

@@ -14,6 +14,9 @@ export component EqualizerPage inherits HorizontalLayout {
     private property <[string]> slots: root.tab == 0 ? Headset.game-eq-slots : Headset.mic-eq-slots;
     private property <int> preset: root.tab == 0 ? Headset.game-eq-preset : Headset.mic-eq-preset;
     private property <bool> edited: root.tab == 0 ? Headset.game-eq-edited : Headset.mic-eq-edited;
+    private property <int> edit-from: root.tab == 0 ? Headset.game-eq-edit-from : Headset.mic-eq-edit-from;
+    // the custom preset being edited, which Update overwrites; "" when the edit did not start from one
+    private property <string> editing-name: root.edited && root.edit-from >= 16 && root.edit-from <= 20 ? root.slots[root.edit-from - 16] : "";
     private property <bool> slots-full: root.slots[0] != "" && root.slots[1] != "" && root.slots[2] != "" && root.slots[3] != "" && root.slots[4] != "";
     private property <bool> no-custom: root.slots[0] == "" && root.slots[1] == "" && root.slots[2] == "" && root.slots[3] == "" && root.slots[4] == "";
     private property <bool> naming;
@@ -33,6 +36,11 @@ export component EqualizerPage inherits HorizontalLayout {
     function set-band(band: int, tenths: int) {
         if (!root.edited) {
             Headset.eq-edit-started(root.eq);
+            if (root.tab == 0) {
+                Headset.game-eq-edit-from = root.preset;
+            } else {
+                Headset.mic-eq-edit-from = root.preset;
+            }
         }
         // the headset switches to unsaved custom bands; show that right away
         if (root.tab == 0) {
@@ -120,10 +128,16 @@ export component EqualizerPage inherits HorizontalLayout {
                 horizontal-stretch: 1;
             }
             Text {
-                text: root.slots-full ? "All five custom presets are in use." : "";
+                text: root.slots-full && root.editing-name == "" ? "All five custom presets are in use." : "";
                 color: Theme.muted;
                 font-size: Theme.small-size;
                 vertical-alignment: center;
+            }
+            if root.editing-name != "": OutlineButton {
+                text: "Update \"" + root.editing-name + "\"";
+                primary: true;
+                enabled: Headset.available;
+                clicked => { Headset.update-preset(root.eq, root.editing-name); }
             }
             OutlineButton {
                 text: "Save as new preset";

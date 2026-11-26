@@ -174,7 +174,7 @@ impl KeyState {
             KeyCode::Char('?') => Action::Help,
             KeyCode::Char('q') => Action::Quit,
             KeyCode::Esc => Action::Escape,
-            KeyCode::Char(c @ ('t' | 'u' | 's' | '=')) => Action::Key(c),
+            KeyCode::Char(c @ ('t' | 'u' | 's' | 'w' | '=')) => Action::Key(c),
             _ => {
                 self.clear();
                 return Outcome::Pending;

@@ -147,10 +147,16 @@ fn graph_card(f: &mut Frame, area: Rect, app: &mut App) {
     f.buffer_mut().set_string(plot_rows.x, freqs.y, "   Hz", theme::dim());
     f.buffer_mut().set_string(plot_rows.x, values.y, "   dB", theme::dim());
 
-    // the buttons: Undo and Save as new preset
+    // the buttons: Undo, Update (while editing a custom preset) and Save as new preset
     let full = pages::slots_full(tab, &app.values);
+    let editing = app.editing_preset(tab);
     let mut x = buttons.x + gutter;
-    for (key, label, on) in [('u', "Undo", app.edited(tab) && enabled), ('s', "Save as new preset", enabled && !full)] {
+    let mut list = vec![('u', "Undo".to_string(), app.edited(tab) && enabled)];
+    if let Some(name) = &editing {
+        list.push(('w', format!("Update \"{name}\""), enabled));
+    }
+    list.push(('s', "Save as new preset".to_string(), enabled && !full));
+    for (key, label, on) in list {
         let text = format!("[ {key} {label} ]");
         let style = if on { Style::new() } else { theme::dim() };
         let width = text.chars().count() as u16;
@@ -161,7 +167,7 @@ fn graph_card(f: &mut Frame, area: Rect, app: &mut App) {
         app.hits.push((Rect { x, y: buttons.y, width, height: 1 }, Hit::EqButton(key)));
         x += width + 3;
     }
-    if full {
+    if full && editing.is_none() {
         f.buffer_mut().set_string(x, buttons.y, "All five custom presets are in use.", theme::muted());
     }
 }

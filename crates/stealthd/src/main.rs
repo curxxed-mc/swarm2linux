@@ -62,6 +62,7 @@ enum Op {
     SetBand { eq: &'static EqKeys, band: usize, tenths: i64 },
     SavePreset { eq: &'static EqKeys, name: String },
     DeletePreset { eq: &'static EqKeys, name: String },
+    UpdatePreset { eq: &'static EqKeys, name: String },
     /// The headset's volume in PipeWire, in percent.
     SinkVolume(i64),
     ApplyProfile(Profile),
@@ -304,6 +305,12 @@ impl Headset {
     async fn save_preset(&self, eq: String, name: String) -> fdo::Result<()> {
         let eq = which_eq(&eq)?;
         self.submit(Op::SavePreset { eq, name }).await
+    }
+
+    /// Replace the bands of a custom preset of the "game" or "mic" equalizer with the current bands, by name.
+    async fn update_preset(&self, eq: String, name: String) -> fdo::Result<()> {
+        let eq = which_eq(&eq)?;
+        self.submit(Op::UpdatePreset { eq, name }).await
     }
 
     /// Delete a custom preset of the "game" or "mic" equalizer by name.
@@ -732,6 +739,7 @@ fn execute(client: &mut Client<HidrawDevice>, state: &State, op: Op) -> Result<(
         Op::SetBand { eq, band, tenths } => client.set(eq.band(band), tenths)?,
         Op::SavePreset { eq, name } => client.save_new_preset(state, eq, &name)?,
         Op::DeletePreset { eq, name } => client.delete_named_preset(state, eq, &name)?,
+        Op::UpdatePreset { eq, name } => client.update_named_preset(state, eq, &name)?,
         Op::ApplyProfile(profile) => {
             for step in profile.plan(&values::values(state)) {
                 match step {
