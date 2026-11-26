@@ -10,6 +10,7 @@
 //! - `SavePreset(s eq, s name)`, `UpdatePreset(s eq, s name)`, `DeletePreset(s eq, s name)`: custom EQ presets;
 //!   `UpdatePreset` replaces a saved preset's bands with the current ones
 //! - `SaveProfile(s name)`, `ApplyProfile(s name)`, `DeleteProfile(s name)`: profiles (see `tb_proto::profile`)
+//! - `SetVoiceMicrophone(s name)`: the microphone voice commands listen on, "" for the system's default
 //! - signal `Changed(a{sv})`: the values that changed
 //! - property `Connected` (b)
 //! - property `BatteryNotifications` (b, writable): whether stealthd warns about a low battery
@@ -37,8 +38,19 @@ pub const INTERFACE: &str = "io.github.swarm2linux.Headset1";
 /// whether the headset's radio link is up, the headset's volume in PipeWire in percent (`-1` when unknown;
 /// writable with `Set`, 0 to 100), the saved profiles' names, the selected profile ("" for none) and whether the
 /// headset's settings differ from it.
-pub const DAEMON_NAMES: [&str; 7] =
-    ["connected", "device", "headset_link", "sink_volume", "profiles", "active_profile", "profile_modified"];
+pub const DAEMON_NAMES: [&str; 11] = [
+    "connected",
+    "device",
+    "headset_link",
+    "sink_volume",
+    "profiles",
+    "active_profile",
+    "profile_modified",
+    "voice_commands",
+    "voice_status",
+    "voice_microphone",
+    "voice_microphones",
+];
 
 /// An integer as D-Bus `i`. Out-of-range numbers saturate rather than wrap, so they stay out of range and are
 /// refused instead of becoming a different, valid value.
@@ -154,6 +166,11 @@ impl DaemonClient {
 
     pub fn delete_preset(&self, eq: &str, name: &str) -> zbus::Result<()> {
         self.proxy.call::<_, _, ()>("DeletePreset", &(eq, name))
+    }
+
+    /// Choose the microphone voice commands listen on (a node name, or "" for the system's default).
+    pub fn set_voice_microphone(&self, name: &str) -> zbus::Result<()> {
+        self.proxy.call::<_, _, ()>("SetVoiceMicrophone", &(name,))
     }
 
     /// Save the headset's current settings as a profile, replacing one of the same name.

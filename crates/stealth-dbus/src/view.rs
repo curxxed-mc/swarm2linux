@@ -73,6 +73,25 @@ impl EqEdit {
     }
 }
 
+/// The microphones to choose from for voice commands, from stealthd's `voice_microphones` ("node name<TAB>
+/// description") and `voice_microphone`: (node name, label) pairs with the system's default ("") first, and which of
+/// them is chosen. A chosen microphone that is not connected is listed too, so the choice still shows.
+pub fn microphone_choices<S: AsRef<str>>(list: &[S], chosen: &str) -> (Vec<(String, String)>, usize) {
+    let mut out = vec![(String::new(), "System default".to_string())];
+    for entry in list {
+        let (name, description) = entry.as_ref().split_once('\t').unwrap_or((entry.as_ref(), entry.as_ref()));
+        out.push((name.to_string(), description.to_string()));
+    }
+    let at = match out.iter().position(|(name, _)| name == chosen) {
+        Some(at) => at,
+        None => {
+            out.push((chosen.to_string(), format!("{chosen} (not connected)")));
+            out.len() - 1
+        }
+    };
+    (out, at)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,6 +120,18 @@ mod tests {
         assert_eq!(preset_name_problem(&taken, "Treble"), "");
         assert_eq!(preset_name_problem(&taken, "bassy"), "There is already a preset with this name");
         assert!(preset_name_problem(&taken, "back\\slash").starts_with("Up to 16"));
+    }
+
+    #[test]
+    fn microphone_choices_start_with_the_default() {
+        let list = ["alsa_input.pci\tBuilt-in Audio Analog Stereo", "alsa_input.usb\tStealth Pro II PC Mono"];
+        let (choices, at) = microphone_choices(&list, "alsa_input.pci");
+        assert_eq!(choices[0], (String::new(), "System default".to_string()));
+        assert_eq!(choices[1].1, "Built-in Audio Analog Stereo");
+        assert_eq!(at, 1);
+        assert_eq!(microphone_choices(&list, "").1, 0);
+        let (choices, at) = microphone_choices(&list, "gone");
+        assert_eq!((choices.len(), at, choices[3].1.as_str()), (4, 3, "gone (not connected)"));
     }
 
     #[test]

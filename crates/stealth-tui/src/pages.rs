@@ -13,7 +13,7 @@ pub fn cards(page: Page, app: &App) -> (Vec<Card>, &'static [&'static [usize]]) 
     let v = &app.values;
     match page {
         Page::Settings => (settings(v), &[&[0], &[1]]),
-        Page::Device => (device(app), &[&[0, 5, 1], &[2, 3, 4]]),
+        Page::Device => (device(app), &[&[0, 5, 1], &[2, 3, 6, 4]]),
         _ => (Vec::new(), &[]),
     }
 }
@@ -129,7 +129,27 @@ fn device(app: &App) -> Vec<Card> {
             ],
         },
         Card { title: "Profiles", rows: profile_rows(v) },
+        Card { title: "Voice commands (experimental)", rows: voice_rows(v) },
     ]
+}
+
+/// The voice commands card: the switch, what stealth-voice is doing, and what to say.
+fn voice_rows(v: &Values) -> Vec<Row> {
+    let mut rows = vec![Row::Control(Control::VoiceCommands)];
+    let (choices, at) = view::microphone_choices(v.texts("voice_microphones"), v.text("voice_microphone"));
+    rows.push(Row::Info("Microphone", choices[at].1.clone(), None));
+    let status = v.text("voice_status");
+    if v.flag("voice_commands") && !status.is_empty() {
+        let colour = if status == "listening" { theme::GOOD } else { theme::WARN };
+        rows.push(Row::Info("Status", status.to_string(), Some(colour)));
+    }
+    rows.push(Row::Hint(
+        "Say \"Stealth, skip this song\", \"pause\", \"resume\", \"go back\", \"volume up\" or \"noise cancelling \
+         off\". Speech is recognised on this computer; the first start downloads a 57 MB speech model. Choose the \
+         microphone in the desktop app or with `stealthctl voice mic`."
+            .into(),
+    ));
+    rows
 }
 
 /// The Profiles card: the selected profile, Save and Revert while it is modified, and saving a new one.

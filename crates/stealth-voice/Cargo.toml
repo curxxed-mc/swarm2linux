@@ -1,0 +1,15 @@
+[package]
+name = "stealth-voice"
+description = "Experimental voice commands: hears \"Stealth, ...\" on the default microphone and controls media players"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+zbus.workspace = true
+whisper-rs = "0.16"
+stealth-dbus.workspace = true
+tb-proto.workspace = true

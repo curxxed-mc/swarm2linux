@@ -22,6 +22,8 @@ pub enum Command {
     SaveProfile(String),
     ApplyProfile(String),
     DeleteProfile(String),
+    /// The microphone voice commands listen on ("" for the system's default).
+    VoiceMicrophone(String),
 }
 
 /// What the link reports.
@@ -94,6 +96,7 @@ pub fn start(report: impl Fn(Event) + Send + Sync + 'static) -> zbus::Result<Lin
                 Command::SaveProfile(name) => client.save_profile(name),
                 Command::ApplyProfile(name) => client.apply_profile(name),
                 Command::DeleteProfile(name) => client.delete_profile(name),
+                Command::VoiceMicrophone(name) => client.set_voice_microphone(name),
             };
             if let Err(e) = result {
                 report(Event::WriteFailed(describe(&e)));

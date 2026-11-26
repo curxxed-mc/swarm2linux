@@ -345,6 +345,52 @@ component NotificationsCard inherits Card {
     }
 }
 
+// Experimental voice commands: stealthd runs stealth-voice while this is on.
+component VoiceCard inherits Card {
+    title: "Voice commands (experimental)";
+
+    VerticalLayout {
+        spacing: 8px;
+        Setting {
+            label: "Listen for \"Stealth, …\"";
+            Toggle {
+                name: "Voice commands";
+                y: (parent.height - self.height) / 2;
+                checked: Headset.voice-commands;
+                enabled: Headset.daemon-running;
+                toggled(on) => {
+                    Headset.voice-commands = on;
+                    Headset.set-bool("voice_commands", on);
+                }
+            }
+        }
+        Setting {
+            label: "Microphone";
+            Dropdown {
+                name: "Voice commands microphone";
+                y: (parent.height - self.height) / 2;
+                width: 240px;
+                choices: Headset.voice-mic-choices;
+                current: Headset.voice-mic-index;
+                enabled: Headset.daemon-running;
+                selected(i) => {
+                    Headset.voice-mic-index = i;
+                    Headset.set-voice-microphone(Headset.voice-mic-names[i]);
+                }
+            }
+        }
+        if Headset.voice-commands && Headset.voice-status != "": Text {
+            text: "Status: " + Headset.voice-status;
+            color: Headset.voice-status == "listening" ? Theme.good : Theme.muted;
+            font-size: Theme.small-size;
+            wrap: word-wrap;
+        }
+        Hint {
+            text: "Say \"Stealth, skip this song\", \"pause\", \"resume\", \"go back\", \"volume up\" or \"noise cancelling off\". Speech is recognised on this computer. The first start downloads a 57 MB speech model.";
+        }
+    }
+}
+
 // The self-diagnostic: what the app needs, checked, with how to fix what is wrong.
 component DiagnosticsCard inherits Card {
     private property <bool> copied;
@@ -575,6 +621,7 @@ export component DevicePage inherits VerticalLayout {
             alignment: start;
             HubCard { }
             NotificationsCard { }
+            VoiceCard { }
             AppearanceCard { }
             AboutCard { }
         }

@@ -100,6 +100,11 @@ enum Cmd {
         #[command(subcommand)]
         cmd: ProfileCmd,
     },
+    /// Voice commands (experimental): "Stealth, skip this song"; run by stealthd
+    Voice {
+        #[command(subcommand)]
+        cmd: Option<VoiceCmd>,
+    },
     /// Print every record as JSON (direct access only)
     Dump,
     /// Print one record as JSON, e.g. GSI or SAF (direct access only)
@@ -152,6 +157,18 @@ enum ProfileCmd {
     Revert,
     /// Delete a saved profile
     Delete { name: String },
+}
+
+#[derive(Subcommand)]
+enum VoiceCmd {
+    /// Show whether voice commands are on, what they are doing, and the microphone (the default)
+    Status,
+    /// Start listening
+    On,
+    /// Stop listening
+    Off,
+    /// List the microphones, or choose one by number or name (`default` for the system's default)
+    Mic { microphone: Option<String> },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -419,6 +436,7 @@ fn main() -> Result<()> {
             HubCmd::Led2 { level } => b.set("hub_led_2", Typed::Int(level)),
         },
         Cmd::Profile { cmd } => profile(b, cmd),
+        Cmd::Voice { cmd } => voice(b, cmd.unwrap_or(VoiceCmd::Status)),
         Cmd::Dump => {
             let state = read_all(b.direct()?)?;
             println!("{}", serde_json::to_string_pretty(&state.to_json())?);
@@ -630,6 +648,48 @@ fn status(b: &mut Backend, device: Option<&Path>) -> Result<()> {
     if let Some(active) = text(&v, "active_profile").filter(|a| !a.is_empty()) {
         let modified = if on(&v, "profile_modified") == "on" { " (modified)" } else { "" };
         println!("Profile       {active}{modified}");
+    }
+    Ok(())
+}
+
+fn voice(b: &mut Backend, cmd: VoiceCmd) -> Result<()> {
+    let Backend::Daemon(d) = b else {
+        bail!("voice commands are run by stealthd; start it first (systemctl --user start stealthd)");
+    };
+    let v = d.values()?;
+    let list = match v.get("voice_microphones") {
+        Some(Typed::Texts(list)) => list.clone(),
+        _ => Vec::new(),
+    };
+    let chosen = text(&v, "voice_microphone").unwrap_or("").to_string();
+    let (choices, at) = stealth_dbus::view::microphone_choices(&list, &chosen);
+    match cmd {
+        VoiceCmd::Status => {
+            println!("Voice commands  {}", on(&v, "voice_commands"));
+            println!("Status          {}", text(&v, "voice_status").unwrap_or(""));
+            println!("Microphone      {}", choices[at].1);
+        }
+        VoiceCmd::On => d.set("voice_commands", &Typed::Bool(true))?,
+        VoiceCmd::Off => d.set("voice_commands", &Typed::Bool(false))?,
+        VoiceCmd::Mic { microphone: None } => {
+            for (i, (_, label)) in choices.iter().enumerate() {
+                println!("{} {i}  {label}", if i == at { "*" } else { " " });
+            }
+        }
+        VoiceCmd::Mic { microphone: Some(wanted) } => {
+            let found = match wanted.parse::<usize>() {
+                Ok(i) => choices.get(i),
+                Err(_) if wanted.eq_ignore_ascii_case("default") => choices.first(),
+                Err(_) => choices.iter().find(|(name, label)| {
+                    name == &wanted || label.to_lowercase().contains(&wanted.to_lowercase())
+                }),
+            };
+            let Some((name, label)) = found else {
+                bail!("no microphone {wanted:?}; see `stealthctl voice mic`");
+            };
+            d.set_voice_microphone(name)?;
+            println!("Voice commands listen on: {label}");
+        }
     }
     Ok(())
 }

@@ -423,6 +423,7 @@ impl App {
     pub fn enabled(&self, control: Control) -> bool {
         match control {
             Control::BatteryPopups => self.daemon == Daemon::Running && self.battery_notifications.is_some(),
+            Control::VoiceCommands => self.daemon == Daemon::Running,
             Control::Profile => self.daemon == Daemon::Running && !self.profiles().is_empty(),
             Control::SuperhumanMode | Control::SuperhumanLevel => self.available() && self.values.flag("superhuman"),
             Control::Volume => self.available() && !control.read_only(&self.values),

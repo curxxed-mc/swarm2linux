@@ -13,9 +13,15 @@
 //! through the `sink-volume` crate, and `profiles` (the saved profiles' names), `active_profile` (the selected
 //! profile, or "": the one last applied or saved, kept across restarts) and `profile_modified` (whether the headset's
 //! settings differ from the selected profile).
+//!
+//! Voice commands (experimental, see `voice`): `voice_commands` (on or off, kept across restarts; set with `Set`)
+//! and `voice_status` (what `stealth-voice` is doing); `voice_microphone` (the node name of the microphone to listen
+//! on, "" for the system's default; set with `SetVoiceMicrophone`) and `voice_microphones` (the audio sources, each
+//! as "node name<TAB>description").
 
 mod osd;
 mod profiles;
+mod voice;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -82,6 +88,16 @@ struct Shared {
     profiles: BTreeMap<String, Profile>,
     /// Whether the settings differ from the selected profile, as last signalled.
     modified: bool,
+    /// What `stealth-voice` is doing ("off" while voice commands are off).
+    voice_status: String,
+    /// The audio sources in PipeWire, as "node name\tdescription".
+    microphones: Vec<String>,
+}
+
+impl Shared {
+    fn voice_config(&self) -> voice::Config {
+        voice::Config { on: self.settings.voice_commands, microphone: self.settings.voice_microphone.clone() }
+    }
 }
 
 impl Shared {
@@ -144,11 +160,15 @@ struct Settings {
     profile: String,
     /// Show the level on screen when the wheel on the headset turns mic monitoring or the noise gate.
     level_popups: bool,
+    /// Listen for voice commands ("Stealth, skip this song").
+    voice_commands: bool,
+    /// The node name of the microphone voice commands listen on, or "" for the system's default.
+    voice_microphone: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { battery_notifications: true, profile: String::new(), level_popups: true }
+        Self { battery_notifications: true, profile: String::new(), level_popups: true, voice_commands: false, voice_microphone: String::new() }
     }
 }
 
@@ -182,6 +202,7 @@ impl Settings {
 struct Headset {
     shared: Arc<Mutex<Shared>>,
     requests: mpsc::Sender<Request>,
+    voice: voice::Switch,
     /// One token: saving, applying and deleting profiles happen one at a time.
     profile_token: (async_channel::Sender<()>, async_channel::Receiver<()>),
 }
@@ -196,10 +217,10 @@ impl Drop for ProfileTurn {
 }
 
 impl Headset {
-    fn new(shared: Arc<Mutex<Shared>>, requests: mpsc::Sender<Request>) -> Self {
+    fn new(shared: Arc<Mutex<Shared>>, requests: mpsc::Sender<Request>, voice: voice::Switch) -> Self {
         let profile_token = async_channel::bounded(1);
         let _ = profile_token.0.try_send(());
-        Self { shared, requests, profile_token }
+        Self { shared, requests, voice, profile_token }
     }
 
     /// Wait for the turn to change profiles.
@@ -265,15 +286,40 @@ impl Headset {
         out.insert("profiles".into(), to_owned_value(&shared.profile_names()));
         out.insert("active_profile".into(), to_owned_value(&Typed::Text(shared.settings.profile.clone())));
         out.insert("profile_modified".into(), to_owned_value(&Typed::Bool(shared.modified)));
+        out.insert("voice_commands".into(), to_owned_value(&Typed::Bool(shared.settings.voice_commands)));
+        out.insert("voice_status".into(), to_owned_value(&Typed::Text(shared.voice_status.clone())));
+        out.insert("voice_microphone".into(), to_owned_value(&Typed::Text(shared.settings.voice_microphone.clone())));
+        out.insert("voice_microphones".into(), to_owned_value(&Typed::Texts(shared.microphones.clone())));
         out
     }
 
     /// Set one value by name, e.g. ("anc", true), ("anc_level", 60) or ("sink_volume", 50).
-    async fn set(&self, name: String, value: OwnedValue) -> fdo::Result<()> {
+    async fn set(
+        &self,
+        name: String,
+        value: OwnedValue,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> fdo::Result<()> {
         let typed = match from_value(&value) {
             Some(t @ (Typed::Bool(_) | Typed::Int(_))) => t,
             _ => return Err(fdo::Error::InvalidArgs("expected a boolean or an integer".into())),
         };
+        if name == "voice_commands" {
+            let Typed::Bool(on) = typed else {
+                return Err(fdo::Error::InvalidArgs("voice_commands is on or off".into()));
+            };
+            let config = {
+                let mut shared = self.shared.lock().unwrap();
+                let mut settings = shared.settings.clone();
+                settings.voice_commands = on;
+                settings.save().map_err(|e| fdo::Error::Failed(format!("saving the setting: {e}")))?;
+                shared.settings = settings;
+                shared.voice_config()
+            };
+            self.voice.set(config);
+            emit_changed(conn, HashMap::from([("voice_commands".to_string(), Value::from(on))])).await;
+            return Ok(());
+        }
         if name == "sink_volume" {
             return match typed {
                 Typed::Int(n @ 0..=100) => self.submit(Op::SinkVolume(n)).await,
@@ -378,6 +424,25 @@ impl Headset {
         }
     }
 
+    /// Choose the microphone voice commands listen on: a node name from `voice_microphones`, or "" for the
+    /// system's default.
+    async fn set_voice_microphone(&self, name: String, #[zbus(connection)] conn: &zbus::Connection) -> fdo::Result<()> {
+        if name.chars().any(char::is_control) {
+            return Err(fdo::Error::InvalidArgs("not a microphone's name".into()));
+        }
+        let config = {
+            let mut shared = self.shared.lock().unwrap();
+            let mut settings = shared.settings.clone();
+            settings.voice_microphone = name.clone();
+            settings.save().map_err(|e| fdo::Error::Failed(format!("saving the setting: {e}")))?;
+            shared.settings = settings;
+            shared.voice_config()
+        };
+        self.voice.set(config);
+        emit_changed(conn, HashMap::from([("voice_microphone".to_string(), Value::from(name))])).await;
+        Ok(())
+    }
+
     /// This stealthd's version.
     #[zbus(property)]
     async fn version(&self) -> String {
@@ -420,14 +485,28 @@ fn main() -> Result<()> {
     if !shared.profiles.contains_key(&shared.settings.profile) {
         shared.settings.profile.clear();
     }
+    let voice_config = shared.voice_config();
     let shared = Arc::new(Mutex::new(shared));
     let (requests, queue) = mpsc::channel();
+    let (voice_switch, voice_queue) = voice::channel();
     let conn = zbus::blocking::connection::Builder::session()?
         .name(BUS_NAME)
         .context("is another stealthd already running?")?
-        .serve_at(PATH, Headset::new(shared.clone(), requests))?
+        .serve_at(PATH, Headset::new(shared.clone(), requests, voice_switch))?
         .build()?;
     eprintln!("stealthd: serving {INTERFACE} at {PATH} as {BUS_NAME}");
+
+    let (voice_conn, voice_shared) = (conn.clone(), shared.clone());
+    let report = move |status: &str| {
+        voice_shared.lock().unwrap().voice_status = status.to_string();
+        let changed = HashMap::from([("voice_status".to_string(), Value::from(status.to_string()))]);
+        if let Err(e) = voice_conn.emit_signal(None::<&str>, PATH, INTERFACE, "Changed", &(changed,)) {
+            eprintln!("stealthd: emitting Changed: {e}");
+        }
+    };
+    std::thread::Builder::new().name("voice".into()).spawn(move || voice::run(voice_queue, voice_config, report))?;
+    let (mics_conn, mics_shared) = (conn.clone(), shared.clone());
+    std::thread::Builder::new().name("microphones".into()).spawn(move || follow_microphones(&mics_conn, &mics_shared))?;
 
     let osd = osd::Osd::start(conn.clone());
     let mut daemon = Daemon { conn, shared, queue, notified_low: None, card: None, sink: None, sink_problem: None, osd };
@@ -446,6 +525,39 @@ fn main() -> Result<()> {
                 sleep(SCAN_INTERVAL);
             }
         }
+    }
+}
+
+/// Keep the list of microphones (PipeWire's audio sources) up to date, for choosing the one voice commands use.
+fn follow_microphones(conn: &Connection, shared: &Mutex<Shared>) {
+    let mut problem = None;
+    loop {
+        match sink_volume::sources() {
+            Ok(sources) => {
+                problem = None;
+                let list: Vec<String> = sources.into_iter().map(|s| format!("{}\t{}", s.name, s.description)).collect();
+                let changed = {
+                    let mut shared = shared.lock().unwrap();
+                    let changed = shared.microphones != list;
+                    shared.microphones = list.clone();
+                    changed
+                };
+                if changed {
+                    let changed = HashMap::from([("voice_microphones".to_string(), to_value(&Typed::Texts(list)))]);
+                    if let Err(e) = conn.emit_signal(None::<&str>, PATH, INTERFACE, "Changed", &(changed,)) {
+                        eprintln!("stealthd: emitting Changed: {e}");
+                    }
+                }
+            }
+            Err(e) => {
+                let e = e.to_string();
+                if problem.as_ref() != Some(&e) {
+                    eprintln!("stealthd: listing microphones: {e}");
+                    problem = Some(e);
+                }
+            }
+        }
+        sleep(SINK_REFRESH);
     }
 }
 

@@ -80,6 +80,17 @@ export global Headset {
     in-out property <string> active-profile;
     in-out property <bool> profile-modified;
 
+    // voice commands (experimental): on or off, and what stealth-voice is doing
+    in-out property <bool> voice-commands;
+    in-out property <string> voice-status;
+    // the microphone voice commands listen on: stealthd's node name ("" for the system's default) and its list
+    // ("node name<TAB>description"); Rust turns them into the choices below
+    in-out property <string> voice-microphone;
+    in-out property <[string]> voice-microphones;
+    in-out property <[Choice]> voice-mic-choices;
+    in-out property <[string]> voice-mic-names;
+    in-out property <int> voice-mic-index;
+
     // whether settings can be changed now
     out property <bool> available: daemon-running && connected && headset-link;
 
@@ -98,6 +109,7 @@ export global Headset {
     callback save-profile(name: string);
     callback apply-profile(name: string);
     callback delete-profile(name: string);
+    callback set-voice-microphone(name: string);
     // remember the preset and bands before the first change, and go back to them
     callback eq-edit-started(eq: string);
     callback eq-edit-cancelled(eq: string);

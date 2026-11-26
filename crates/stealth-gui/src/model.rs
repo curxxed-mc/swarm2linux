@@ -64,6 +64,21 @@ fn target(name: &str) -> Option<Target> {
         "profiles" => Texts(|h, v| h.set_profiles(v)),
         "active_profile" => Text(|h, v| h.set_active_profile(v)),
         "profile_modified" => Bool(|h, v| h.set_profile_modified(v)),
+        "voice_commands" => Bool(|h, v| h.set_voice_commands(v)),
+        "voice_status" => Text(|h, v| h.set_voice_status(v)),
+        "voice_microphone" => Other(|h, v| {
+            if let Typed::Text(name) = v {
+                h.set_voice_microphone(name.into());
+            }
+            show_microphones(h);
+        }),
+        "voice_microphones" => Other(|h, v| {
+            match v {
+                Typed::Texts(list) => h.set_voice_microphones(texts(list)),
+                _ => h.set_voice_microphones(texts::<&str>(&[])),
+            }
+            show_microphones(h);
+        }),
         _ => return None,
     })
 }
@@ -93,6 +108,17 @@ fn show_transmitters(h: &Headset<'_>, value: &Typed) {
     let (lines, hub) = view::transmitter_lines(entries);
     h.set_transmitters(texts(&lines));
     h.set_hub_status(hub.into());
+}
+
+/// The microphone choices for voice commands, from stealthd's list and choice.
+fn show_microphones(h: &Headset<'_>) {
+    let list: Vec<SharedString> = h.get_voice_microphones().iter().collect();
+    let (choices, at) = view::microphone_choices(&list, &h.get_voice_microphone());
+    let items: Vec<Choice> =
+        choices.iter().enumerate().map(|(i, (_, label))| Choice { value: i as i32, label: label.into() }).collect();
+    h.set_voice_mic_choices(ModelRc::new(VecModel::from(items)));
+    h.set_voice_mic_names(texts(&choices.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>()));
+    h.set_voice_mic_index(at as i32);
 }
 
 /// Fill the option lists.

@@ -44,6 +44,42 @@ pub fn find(card: u32) -> io::Result<Option<Sink>> {
     Ok(sink_of(&objects, card))
 }
 
+/// A microphone or other audio source in PipeWire.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Source {
+    /// The node name, which `pw-record --target` takes.
+    pub name: String,
+    /// What the sound settings call it.
+    pub description: String,
+}
+
+/// The audio sources (microphones, and virtual sources such as noise suppression; not the monitors of outputs).
+pub fn sources() -> io::Result<Vec<Source>> {
+    let out = run(Command::new("pw-dump"))?;
+    let objects: Value = serde_json::from_slice(&out).map_err(io::Error::other)?;
+    Ok(sources_of(&objects))
+}
+
+fn sources_of(objects: &Value) -> Vec<Source> {
+    let mut out: Vec<Source> = objects
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|o| {
+            let props = &o["info"]["props"];
+            let class = props["media.class"].as_str()?;
+            if o["type"] != "PipeWire:Interface:Node" || !class.starts_with("Audio/Source") {
+                return None;
+            }
+            let name = props["node.name"].as_str()?.to_string();
+            let description = props["node.description"].as_str().or(props["node.nick"].as_str()).unwrap_or(&name);
+            Some(Source { description: description.to_string(), name })
+        })
+        .collect();
+    out.sort_by(|a, b| a.description.cmp(&b.description));
+    out
+}
+
 /// Set the volume of sink `id`, in percent (0 to 100).
 pub fn set_percent(id: u32, percent: i64) -> io::Result<()> {
     let level = format!("{:.2}", percent.clamp(0, 100) as f64 / 100.0);
@@ -140,6 +176,25 @@ mod tests {
         echo.arg("hi");
         assert_eq!(run_for(echo, Duration::from_secs(5)).unwrap(), b"hi\n");
         assert!(run_for(Command::new("false"), Duration::from_secs(5)).is_err());
+    }
+
+    #[test]
+    fn lists_sources_but_not_monitors_or_streams() {
+        let objects = serde_json::json!([
+            {"type": "PipeWire:Interface:Node", "info": {"props": {"media.class": "Audio/Source",
+                "node.name": "alsa_input.pci", "node.description": "Built-in Audio Analog Stereo"}}},
+            {"type": "PipeWire:Interface:Node", "info": {"props": {"media.class": "Audio/Sink",
+                "node.name": "alsa_output.pci", "node.description": "Built-in Audio"}}},
+            {"type": "PipeWire:Interface:Node", "info": {"props": {"media.class": "Stream/Input/Audio",
+                "node.name": "stealth-voice"}}},
+            {"type": "PipeWire:Interface:Node", "info": {"props": {"media.class": "Audio/Source/Virtual",
+                "node.name": "rnnoise", "node.description": "Noise Canceling"}}},
+        ]);
+        let names: Vec<_> = sources_of(&objects).into_iter().map(|s| (s.name, s.description)).collect();
+        assert_eq!(names, [
+            ("alsa_input.pci".to_string(), "Built-in Audio Analog Stereo".to_string()),
+            ("rnnoise".to_string(), "Noise Canceling".to_string()),
+        ]);
         let mut sleep = Command::new("sleep");
         sleep.arg("5");
         let start = Instant::now();

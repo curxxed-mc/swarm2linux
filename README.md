@@ -447,6 +447,36 @@ anc_level = 100
 superhuman = false
 ```
 
+## Voice commands (experimental)
+
+Turn on **Voice commands** on the Device page (in either app, or
+`busctl --user call io.github.swarm2linux.Stealthd /io/github/swarm2linux/Headset io.github.swarm2linux.Headset1 Set sv voice_commands b true`)
+and say "Stealth" followed by a command:
+
+| Say | Does |
+|-----|------|
+| "Stealth, skip this song" / "next" | next track in the playing media player |
+| "Stealth, go back" / "previous song" | previous track |
+| "Stealth, pause this video" / "stop" | pause |
+| "Stealth, resume" / "play" / "continue" | play (the player paused last) |
+| "Stealth, volume up" / "louder", "volume down" / "quieter" | the default output's volume, 5 % a step |
+| "Stealth, noise cancelling on" / "off" | the headset's noise cancellation |
+
+Media players are controlled over MPRIS, which Spotify, VLC, mpv (with `mpv-mpris`), and Firefox and Chromium for
+web video support. Each command shows a short pop-up.
+
+It listens on the system's default microphone unless you choose another one under **Microphone** in the same card
+(or with `stealthctl voice mic`, which lists them; `stealthctl voice mic 1` or `stealthctl voice mic built-in`
+chooses one). The choice applies only to voice commands. If the microphone stays silent for 30 seconds, the status
+says so: check that it is not muted. `stealthctl voice` shows the status, `stealthctl voice on|off` switches it.
+
+`stealthd` runs the separate program `stealth-voice` while this is on. It recognises speech on this computer with
+[whisper.cpp](https://github.com/ggml-org/whisper.cpp): nothing is sent anywhere. On first use it downloads the
+57 MB English model `ggml-base.en-q5_1.bin` from Hugging Face into `~/.local/share/swarm2linux/` and checks its
+SHA-256. Building `stealth-voice` needs cmake and a C++ compiler; `install.sh` skips it without them, and the
+switch then says it is not installed. To see what it hears without acting on it, stop the switch and run
+`stealth-voice --dry-run`.
+
 ## stealthd (background service)
 
 `stealthd` owns the headset: it finds it (preferring the transmitter over the headset's own cable), keeps a session
@@ -468,7 +498,9 @@ D-Bus: `io.github.swarm2linux.Stealthd`, object `/io/github/swarm2linux/Headset`
 `io.github.swarm2linux.Headset1` with `Values() -> a{sv}`, `Set(s, v)`, `SetBand(s, u, i)`, `SavePreset(s, s)`,
 `UpdatePreset(s, s)`, `DeletePreset(s, s)`, `SaveProfile(s)`, `ApplyProfile(s)`, `DeleteProfile(s)` and the signal `Changed(a{sv})`.
 Value names are listed in `crates/tb-proto/src/values.rs`, plus `connected`, `device`, `headset_link`,
-`sink_volume`, `profiles`, `active_profile` and `profile_modified` from the daemon.
+`sink_volume`, `profiles`, `active_profile`, `profile_modified`, `voice_commands`, `voice_status`,
+`voice_microphone` and `voice_microphones` from the daemon; `SetVoiceMicrophone(s)` chooses the voice commands'
+microphone.
 
 ```sh
 busctl --user call io.github.swarm2linux.Stealthd /io/github/swarm2linux/Headset \

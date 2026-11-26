@@ -186,6 +186,8 @@ fn connect_writes(h: &Headset<'_>, bridge: &Link) {
     h.on_apply_profile(move |name| b.send(Command::ApplyProfile(name.into())));
     let b = bridge.clone();
     h.on_delete_profile(move |name| b.send(Command::DeleteProfile(name.into())));
+    let b = bridge.clone();
+    h.on_set_voice_microphone(move |name| b.send(Command::VoiceMicrophone(name.into())));
 }
 
 /// The equalizer page's name check and Cancel.

@@ -78,6 +78,7 @@ pub enum Control {
     HubLed1,
     HubLed2,
     BatteryPopups,
+    VoiceCommands,
     Profile,
     SaveProfile,
     /// shown while the selected profile is modified
@@ -118,6 +119,7 @@ impl Control {
             Control::HubLed1 => "LED 1",
             Control::HubLed2 => "LED 2",
             Control::BatteryPopups => "Battery pop-ups",
+            Control::VoiceCommands => "Voice commands",
             Control::Profile => "Profile",
             Control::SaveProfile => "Save as new profile",
             Control::UpdateProfile => "Save changes",
@@ -147,6 +149,7 @@ impl Control {
             Control::HubLed2 => slider("hub_led_2"),
             // stealthd's own setting, not a headset value
             Control::BatteryPopups => Kind::Toggle("battery_notifications"),
+            Control::VoiceCommands => Kind::Toggle("voice_commands"),
             Control::Profile => Kind::Profile,
             Control::SaveProfile | Control::UpdateProfile | Control::RevertProfile => Kind::Button,
         }

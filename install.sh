@@ -176,6 +176,18 @@ install_all() {
 
     step "Building (this takes a few minutes the first time)"
     cargo build --release --locked
+    # experimental voice commands build whisper.cpp, which needs cmake and a C++ compiler; without them the rest
+    # works and the voice commands switch says what is missing
+    voice=false
+    if have cmake && { have c++ || have g++ || have clang++; }; then
+        if cargo build --release --locked -p stealth-voice; then
+            voice=true
+        else
+            warn "building stealth-voice (voice commands) failed; everything else is installed"
+        fi
+    else
+        note "Skipping voice commands (experimental): they need cmake and a C++ compiler."
+    fi
 
     step "Installing"
     # characters that would break the desktop entry's Exec= line or the sed commands below
@@ -183,6 +195,9 @@ install_all() {
     for p in "${PROGRAMS[@]}"; do
         put 755 "target/release/$p" "$BIN/$p"
     done
+    if $voice; then
+        put 755 target/release/stealth-voice "$BIN/stealth-voice"
+    fi
     # the menu entry names the program by its full path: Plasma's PATH usually lacks ~/.local/bin
     sed "s|^Exec=stealth-gui|Exec=\"$BIN/stealth-gui\"|" "packaging/$APP_ID.desktop" >"target/$APP_ID.desktop"
     put 644 "target/$APP_ID.desktop" "$DESKTOP"
@@ -230,10 +245,14 @@ uninstall_all() {
     fi
     pkill -x -u "$(id -u)" stealth-gui 2>/dev/null || true
     pkill -x -u "$(id -u)" stealthd 2>/dev/null || true
-    for p in "${PROGRAMS[@]}"; do
+    pkill -x -u "$(id -u)" stealth-voice 2>/dev/null || true
+    for p in "${PROGRAMS[@]}" stealth-voice; do
         rm -f "$BIN/$p"
     done
     rm -f "$DESKTOP" "$ICON" "$UNIT" "$AUTOSTART"
+    # the speech model voice commands downloaded
+    rm -f "$DATA/swarm2linux/ggml-base.en-q5_1.bin"
+    rmdir "$DATA/swarm2linux" 2>/dev/null || true
     if user_systemd; then
         systemctl --user daemon-reload
     fi
